@@ -281,6 +281,18 @@ function drawStars() {
 }
 
 // ═══════════════════════════════════════════════════
+//  BALANCE CONSTANTS
+// ═══════════════════════════════════════════════════
+const BASE_FIRE_RATE            = 0.32;
+const MIN_FIRE_RATE             = 0.08;
+const FIRE_RATE_UPGRADE_STEP    = 0.04;
+const SHIELD_REGEN_DELAY        = 3;      // seconds before shield starts regenerating
+const SHIELD_REGEN_RATE         = 0.5;    // shield per second
+const MAX_PIERCING_HITS         = 3;
+const CREDIT_SCORE_MULTIPLIER   = 0.5;
+const WAVE_HP_SCALE_FACTOR      = 0.08;   // enemy HP multiplier per wave
+
+// ═══════════════════════════════════════════════════
 //  GAME STATE
 // ═══════════════════════════════════════════════════
 let state = 'menu'; // menu | playing | paused | gameover
@@ -303,7 +315,7 @@ function createPlayer() {
     shieldMax: save.upgrades.shield > 0 ? save.upgrades.shield : 0,
     shieldRegen: 0,
     fireCooldown: 0,
-    fireRate: Math.max(0.08, 0.32 - save.upgrades.firerate * 0.04),
+    fireRate: Math.max(MIN_FIRE_RATE, BASE_FIRE_RATE - save.upgrades.firerate * FIRE_RATE_UPGRADE_STEP),
     dmg: 1 + save.upgrades.damage * 0.5,
     spread: save.upgrades.spread,
     piercing: save.upgrades.piercing > 0,
@@ -332,7 +344,7 @@ let enemies = [];
 //  'boss'     — multi-phase, tracks player
 
 function enemyDef(type, wave) {
-  const scale = 1 + (wave-1)*0.08;
+  const scale = 1 + (wave-1)*WAVE_HP_SCALE_FACTOR;
   const defs = {
     grunt:  { w:28, h:28, hp:2*scale, spd:70+wave*4, score:10, credits:5,  color:'#f44',  behavior:'zigzag',   fireRate:2.5-wave*0.03,  shots:1 },
     weaver: { w:28, h:32, hp:2*scale, spd:55+wave*3, score:15, credits:8,  color:'#a4f',  behavior:'sine',     fireRate:2.0-wave*0.03,  shots:2 },
@@ -514,8 +526,8 @@ function updatePlayer(dt) {
   // shield regen
   if (p.shieldMax > 0) {
     p.shieldRegen += dt;
-    if (p.shieldRegen > 3 && p.shield < p.shieldMax) {
-      p.shield = Math.min(p.shieldMax, p.shield + dt * 0.5);
+    if (p.shieldRegen > SHIELD_REGEN_DELAY && p.shield < p.shieldMax) {
+      p.shield = Math.min(p.shieldMax, p.shield + dt * SHIELD_REGEN_RATE);
     }
   }
 
@@ -528,15 +540,15 @@ function firePlayer() {
   const spd = 600;
   const dmg = p.dmg;
   // Center shot
-  bullets.push({ x:p.x, y:p.y - p.h/2, vx:0, vy:-spd, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?3:1 });
+  bullets.push({ x:p.x, y:p.y - p.h/2, vx:0, vy:-spd, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?MAX_PIERCING_HITS:1 });
   // Spread shots
   if (p.spread >= 1) {
-    bullets.push({ x:p.x, y:p.y - p.h/2, vx:-120, vy:-spd*0.97, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?3:1 });
-    bullets.push({ x:p.x, y:p.y - p.h/2, vx: 120, vy:-spd*0.97, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?3:1 });
+    bullets.push({ x:p.x, y:p.y - p.h/2, vx:-120, vy:-spd*0.97, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?MAX_PIERCING_HITS:1 });
+    bullets.push({ x:p.x, y:p.y - p.h/2, vx: 120, vy:-spd*0.97, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?MAX_PIERCING_HITS:1 });
   }
   if (p.spread >= 2) {
-    bullets.push({ x:p.x, y:p.y - p.h/2, vx:-240, vy:-spd*0.88, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?3:1 });
-    bullets.push({ x:p.x, y:p.y - p.h/2, vx: 240, vy:-spd*0.88, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?3:1 });
+    bullets.push({ x:p.x, y:p.y - p.h/2, vx:-240, vy:-spd*0.88, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?MAX_PIERCING_HITS:1 });
+    bullets.push({ x:p.x, y:p.y - p.h/2, vx: 240, vy:-spd*0.88, dmg, piercing:p.piercing, hits:0, maxHits:p.piercing?MAX_PIERCING_HITS:1 });
   }
 }
 
@@ -836,7 +848,7 @@ function checkCollisions() {
     if (dx*dx + dy*dy < 900) {
       sessionCredits += pk.amount;
       save.credits  += pk.amount;
-      score += Math.floor(pk.amount * 0.5);
+      score += Math.floor(pk.amount * CREDIT_SCORE_MULTIPLIER);
       sndCollect();
       spawnPickupEffect(pk.x, pk.y);
       pickups.splice(i,1);
@@ -1041,8 +1053,8 @@ function drawEnemies() {
   for (const e of enemies) {
     ctx.save();
     const flash = e.flashTimer > 0;
-    const cx = e.x + (e.w ? 0 : 0);
-    const cy = e.y + (e.h ? 0 : 0);
+    const cx = e.x;
+    const cy = e.y;
     ctx.translate(cx, cy);
 
     if (e.behavior === 'boss') {
