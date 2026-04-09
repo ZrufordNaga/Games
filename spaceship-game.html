@@ -614,7 +614,6 @@ function updateEnemies(dt) {
           if (e.y > H*0.6) { e.phase = 1; e.vy = -e.spd * 0.8; }
         } else {
           e.y += e.vy * dt;
-          e.vy *= 0.98;
           if (e.y < -e.h) { e.y = -e.h; e.phase = 0; e.x = 40+Math.random()*(W-80); }
         }
         e.x += Math.sin(e.t * 3) * 80 * dt;
@@ -912,11 +911,12 @@ function updateWave(dt) {
     if (waveBreak <= 0) {
       wave++;
       spawnWave(wave);
+      waveBreak = 0;
     }
     return;
   }
   // All enemies dead?
-  if (enemies.length === 0 && !waveBreak) {
+  if (enemies.length === 0 && waveBreak <= 0) {
     waveBreak = waveBreakDuration;
   }
 }
