@@ -849,7 +849,8 @@ function killEnemy(idx) {
   if (e.behavior === 'boss') { sndBossDie(); bossActive = false; }
   else sndEnemyDie();
   // Drop credits
-  const drops = Math.floor(e.credits / 10) + 1;
+  // Cap drops: regular enemies max 3, boss max 6 (boss still pays out full credits across fewer coins)
+  const drops = Math.min(Math.floor(e.credits / 10) + 1, e.behavior === 'boss' ? 6 : 3);
   for (let d=0; d<drops; d++) {
     spawnPickup(
       e.x + (e.w ? e.w/2 : 0) + (Math.random()-0.5)*40,
@@ -922,15 +923,17 @@ function draw() {
 // ═══════════════════════════════════════════════════
 let renderer3D, scene3D, camera3D;
 let playerMesh3D, shieldMesh3D;
-const enemyMesh3DMap  = new Map();
-const pickupMesh3DMap = new Map();
+const enemyMesh3DMap = new Map();
 
 // Pre-allocated pools: 120 player bullets covers rapid-fire + spread upgrades,
 // 400 enemy bullets covers boss spiral patterns + many on-screen enemies.
 const POOL_PBULLET = 120;
 const POOL_EBULLET = 400;
+// 80 pickup slots cover max expected on-screen drops without per-spawn allocation.
+const POOL_PICKUP  = 80;
 let pBulletMeshes = [];
-let eBulletData   = [];   // { grp, sphere, light }
+let eBulletData   = [];   // { grp, sphere }
+let pickupMeshPool = [];  // { mesh } pre-allocated, assigned per-frame
 
 const MAX_PARTS = 600;
 let partGeo, partPos, partCol, partPoints3D;
@@ -1089,7 +1092,6 @@ function createEnemyMesh(type) {
           new THREE.MeshStandardMaterial({ color:0x991111, metalness:0.6, roughness:0.4 }));
         w.position.set(s*13, -1, -4);  g.add(w);
       });
-      g.add(new THREE.PointLight(0xff2222, 2.5, 55));
       break;
     }
     case 'weaver': {
@@ -1100,7 +1102,6 @@ function createEnemyMesh(type) {
         new THREE.MeshStandardMaterial({ color:0xcc66ff, emissive:0xaa33ff, emissiveIntensity:0.8 }));
       ring.rotation.x = Math.PI/2;  g.add(ring);
       g.userData.animRing = ring;
-      g.add(new THREE.PointLight(0xaa44ff, 3, 65));
       break;
     }
     case 'dasher': {
@@ -1114,7 +1115,6 @@ function createEnemyMesh(type) {
       });
       g.add(new THREE.Mesh(new THREE.SphereGeometry(5, 8, 6),
         new THREE.MeshStandardMaterial({ color:0x55ccff, emissive:0x2288aa, emissiveIntensity:0.7 })));
-      g.add(new THREE.PointLight(0x4499ff, 2.5, 65));
       break;
     }
     case 'tank': {
@@ -1136,7 +1136,6 @@ function createEnemyMesh(type) {
         new THREE.MeshStandardMaterial({ color:0xffaa00, metalness:0.9, roughness:0.1,
           emissive:0xcc7700, emissiveIntensity:0.4 }));
       tnose.rotation.x = -Math.PI/2;  tnose.position.z = 25;  g.add(tnose);
-      g.add(new THREE.PointLight(0xffaa00, 3, 75));
       break;
     }
     case 'sniper': {
@@ -1151,7 +1150,6 @@ function createEnemyMesh(type) {
       const tip = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 6),
         new THREE.MeshBasicMaterial({ color:0x00ffcc }));
       tip.position.z = 42;  g.add(tip);
-      const sl = new THREE.PointLight(0x00ffaa, 3, 65);  sl.position.z = 40;  g.add(sl);
       break;
     }
     case 'bomber': {
@@ -1168,13 +1166,11 @@ function createEnemyMesh(type) {
         pod.rotation.x = Math.PI/2;
         pod.position.set(Math.cos(a)*13, Math.sin(a)*7, 8);  g.add(pod);
       }
-      g.add(new THREE.PointLight(0xff44aa, 3, 65));
       break;
     }
     default: {
       g.add(new THREE.Mesh(new THREE.BoxGeometry(20, 8, 20),
-        new THREE.MeshStandardMaterial({ color:0xff4400 })));
-      g.add(new THREE.PointLight(0xff4400, 2, 50));
+        new THREE.MeshStandardMaterial({ color:0xff4400, emissive:0x441100, emissiveIntensity:0.4 })));
     }
   }
   return g;
@@ -1230,27 +1226,33 @@ function createBossMesh() {
 
 // ─── Bullet pools ─────────────────────────────────────
 function initBulletPools() {
+  // Player bullets — bright cyan, no PointLight (avoids shader recompilation on count change)
   const pGeo = new THREE.CylinderGeometry(1.5, 1.5, 18, 8);
   const pMat = new THREE.MeshBasicMaterial({ color:0x00ffff });
   for (let i = 0; i < POOL_PBULLET; i++) {
     const mesh = new THREE.Mesh(pGeo, pMat);
     mesh.rotation.x = Math.PI/2;
-    const grp = new THREE.Group();
-    grp.add(mesh);
-    grp.add(new THREE.PointLight(0x00ffff, 2, 28));
-    grp.visible = false;
-    scene3D.add(grp);
-    pBulletMeshes.push(grp);
+    mesh.visible = false;
+    scene3D.add(mesh);
+    pBulletMeshes.push(mesh);
   }
+  // Enemy bullets — bright sphere, no PointLight
   const eGeo = new THREE.SphereGeometry(4, 8, 6);
   for (let i = 0; i < POOL_EBULLET; i++) {
     const sphere = new THREE.Mesh(eGeo, new THREE.MeshBasicMaterial({ color:0xff4400 }));
-    const light  = new THREE.PointLight(0xff4400, 1.5, 22);
-    const grp    = new THREE.Group();
-    grp.add(sphere);  grp.add(light);
-    grp.visible = false;
-    scene3D.add(grp);
-    eBulletData.push({ grp, sphere, light });
+    sphere.visible = false;
+    scene3D.add(sphere);
+    eBulletData.push({ sphere });
+  }
+  // Pickup coins — hexagonal cylinder, bright emissive yellow, no PointLight
+  const pkGeo = new THREE.CylinderGeometry(7, 7, 5, 6);
+  const pkMat = new THREE.MeshBasicMaterial({ color:0xffdd00 });
+  for (let i = 0; i < POOL_PICKUP; i++) {
+    const mesh = new THREE.Mesh(pkGeo, pkMat);
+    mesh.rotation.x = Math.PI/2;
+    mesh.visible = false;
+    scene3D.add(mesh);
+    pickupMeshPool.push(mesh);
   }
 }
 
@@ -1278,25 +1280,14 @@ function initShieldMesh() {
   scene3D.add(shieldMesh3D);
 }
 
-// ─── Pickup mesh ─────────────────────────────────────
-function createPickupMesh() {
-  const g = new THREE.Group();
-  const hex = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 5, 6),
-    new THREE.MeshStandardMaterial({ color:0xffcc00, emissive:0xffaa00, emissiveIntensity:1.2,
-      metalness:0.5, roughness:0.2 }));
-  hex.rotation.x = Math.PI/2;  g.add(hex);
-  g.add(new THREE.PointLight(0xffcc00, 2, 45));
-  return g;
-}
-
 // ─── Scene reset (called from startGame) ─────────────
 function resetScene3D() {
   for (const mesh of enemyMesh3DMap.values()) { scene3D.remove(mesh); disposeGroup(mesh); }
   enemyMesh3DMap.clear();
-  for (const mesh of pickupMesh3DMap.values()) scene3D.remove(mesh);
-  pickupMesh3DMap.clear();
+  // Hide all pool items (pickups, bullets)
+  pickupMeshPool.forEach(m => { m.visible = false; });
   pBulletMeshes.forEach(m => { m.visible = false; });
-  eBulletData.forEach(d => { d.grp.visible = false; });
+  eBulletData.forEach(d => { d.sphere.visible = false; });
   if (playerMesh3D) { scene3D.remove(playerMesh3D); disposeGroup(playerMesh3D); }
   playerMesh3D = createPlayerMesh();
   scene3D.add(playerMesh3D);
@@ -1387,11 +1378,12 @@ function syncEnemyMeshes3D() {
 
 function syncBullets3D() {
   for (let i = 0; i < POOL_PBULLET; i++) {
+    const m = pBulletMeshes[i];
     if (i < bullets.length) {
-      pBulletMeshes[i].visible = true;
-      pBulletMeshes[i].position.set(bullets[i].x, 8, bullets[i].y);
+      m.visible = true;
+      m.position.set(bullets[i].x, 8, bullets[i].y);
     } else {
-      pBulletMeshes[i].visible = false;
+      m.visible = false;
     }
   }
 }
@@ -1402,14 +1394,13 @@ function syncEBullets3D() {
     const d = eBulletData[i];
     if (i < eBullets.length) {
       const b = eBullets[i];
-      d.grp.visible = true;
-      d.grp.position.set(b.x, 8, b.y);
+      d.sphere.visible = true;
+      d.sphere.position.set(b.x, 8, b.y);
       tmpCol.set(b.color);
       d.sphere.material.color.copy(tmpCol);
-      d.light.color.copy(tmpCol);
-      d.grp.scale.setScalar(b.r / 4);
+      d.sphere.scale.setScalar(b.r / 4);
     } else {
-      d.grp.visible = false;
+      d.sphere.visible = false;
     }
   }
 }
@@ -1439,19 +1430,18 @@ function syncParticles3D() {
 }
 
 function syncPickups3D() {
-  // Remove collected
-  for (const [pk, mesh] of pickupMesh3DMap) {
-    if (!pickups.includes(pk)) { scene3D.remove(mesh);  pickupMesh3DMap.delete(pk); }
-  }
-  // Add new / update
-  for (const pk of pickups) {
-    if (!pickupMesh3DMap.has(pk)) {
-      const mesh = createPickupMesh();
-      scene3D.add(mesh);  pickupMesh3DMap.set(pk, mesh);
-    }
-    const mesh = pickupMesh3DMap.get(pk);
+  // Assign pool slots directly each frame — O(n), no Map lookups or allocations
+  const n = Math.min(pickups.length, POOL_PICKUP);
+  for (let i = 0; i < n; i++) {
+    const pk   = pickups[i];
+    const mesh = pickupMeshPool[i];
+    mesh.visible = true;
     mesh.position.set(pk.x, 8, pk.y);
     mesh.rotation.y = pk.spin;
+  }
+  // Hide unused slots
+  for (let i = n; i < POOL_PICKUP; i++) {
+    pickupMeshPool[i].visible = false;
   }
 }
 
