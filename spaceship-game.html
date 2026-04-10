@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Void Striker — Spaceship Game</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
@@ -136,6 +137,7 @@ canvas {
 <body>
 <div id="gameWrapper">
   <canvas id="c" width="600" height="800"></canvas>
+  <canvas id="hud" width="600" height="800" style="position:absolute;top:0;left:0;pointer-events:none;z-index:4;"></canvas>
 
   <!-- MAIN MENU -->
   <div class="screen" id="menuScreen">
@@ -246,39 +248,15 @@ function sndShield()   { playTone(1200, 'sine', 0.15, 0.1, 0.005, 0.13, 600); }
 // ═══════════════════════════════════════════════════
 //  CANVAS SETUP
 // ═══════════════════════════════════════════════════
-const canvas = document.getElementById('c');
-const ctx    = canvas.getContext('2d');
+const canvas    = document.getElementById('c');
+const hudCanvas = document.getElementById('hud');
+const hudCtx    = hudCanvas.getContext('2d');
 const W = 600, H = 800;
 
 // ═══════════════════════════════════════════════════
-//  STARS (parallax layers)
+//  STARS — implemented in THREE.JS section below
 // ═══════════════════════════════════════════════════
-const STAR_LAYERS = [
-  { count:60,  speed:0.3, size:1,   alpha:0.4 },
-  { count:40,  speed:0.7, size:1.5, alpha:0.6 },
-  { count:20,  speed:1.4, size:2.5, alpha:0.8 },
-];
-let stars = [];
-function initStars() {
-  stars = [];
-  for (const L of STAR_LAYERS)
-    for (let i=0; i<L.count; i++)
-      stars.push({ x:Math.random()*W, y:Math.random()*H, speed:L.speed, size:L.size, alpha:L.alpha*(0.6+Math.random()*0.4) });
-}
-function updateStars(dt) {
-  for (const s of stars) {
-    s.y += s.speed * dt * 60;
-    if (s.y > H) { s.y = 0; s.x = Math.random()*W; }
-  }
-}
-function drawStars() {
-  for (const s of stars) {
-    ctx.globalAlpha = s.alpha;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(s.x, s.y, s.size, s.size);
-  }
-  ctx.globalAlpha = 1;
-}
+// initStars(), updateStars(dt) defined in the THREE.JS block
 
 // ═══════════════════════════════════════════════════
 //  BALANCE CONSTANTS
@@ -479,6 +457,7 @@ function gameLoop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
   if (state === 'playing') update(dt);
+  else updateStars(dt);   // keep stars moving on menu/pause
   draw();
   raf = requestAnimationFrame(gameLoop);
 }
@@ -925,444 +904,623 @@ function updateWave(dt) {
 //  DRAW
 // ═══════════════════════════════════════════════════
 function draw() {
-  ctx.clearRect(0,0,W,H);
-  // Background
-  ctx.fillStyle = '#00020e';
-  ctx.fillRect(0,0,W,H);
-
-  drawStars();
-  drawPickups();
-  drawBullets();
-  drawEBullets();
-  drawEnemies();
-  if (state === 'playing' || state === 'paused') drawPlayer();
-  drawParticles();
+  syncPlayerMesh3D();
+  syncEnemyMeshes3D();
+  syncBullets3D();
+  syncEBullets3D();
+  syncParticles3D();
+  syncPickups3D();
+  renderer3D.render(scene3D, camera3D);
+  // 2D HUD overlay
+  hudCtx.clearRect(0, 0, W, H);
   if (state === 'playing') drawHUD();
   if (state === 'playing' && waveBreak > 0) drawWaveAnnounce();
 }
 
-function drawPlayer() {
-  const p = player;
-  ctx.save();
-  ctx.translate(p.x, p.y);
+// ═══════════════════════════════════════════════════
+//  THREE.JS SCENE  +  SHIP MODELS  +  SYNC FUNCTIONS
+// ═══════════════════════════════════════════════════
+let renderer3D, scene3D, camera3D;
+let playerMesh3D, shieldMesh3D;
+const enemyMesh3DMap  = new Map();
+const pickupMesh3DMap = new Map();
 
-  // Invincibility flash
-  if (p.invincible > 0 && Math.floor(p.invincible*8)%2===0) { ctx.restore(); return; }
+const POOL_PBULLET = 120;
+const POOL_EBULLET = 400;
+let pBulletMeshes = [];
+let eBulletData   = [];   // { grp, sphere, light }
 
-  // Shield
-  if (p.shield > 0) {
-    const sp = p.shield / p.shieldMax;
-    ctx.beginPath();
-    ctx.arc(0, 0, p.w*0.75, 0, Math.PI*2);
-    ctx.strokeStyle = `rgba(100,180,255,${sp*0.8})`;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(100,180,255,${sp*0.3})`;
-    ctx.lineWidth = 8;
-    ctx.stroke();
-  }
+const MAX_PARTS = 600;
+let partGeo, partPos, partCol, partPoints3D;
 
-  // Thrust flames
-  const fl = 0.6 + 0.4*Math.sin(p.thrustFlicker);
-  ctx.save();
-  ctx.translate(0, p.h/2 - 4);
-  // Center flame
-  const grad1 = ctx.createLinearGradient(0,0,0,20*fl);
-  grad1.addColorStop(0,'#fff');
-  grad1.addColorStop(0.3,'#7af');
-  grad1.addColorStop(1,'rgba(0,100,255,0)');
-  ctx.fillStyle = grad1;
-  ctx.beginPath(); ctx.ellipse(0,0,6,18*fl,0,0,Math.PI*2); ctx.fill();
-  // Side flames
-  [-14,14].forEach(ox => {
-    const grad2 = ctx.createLinearGradient(0,0,0,12*fl);
-    grad2.addColorStop(0,'#adf'); grad2.addColorStop(1,'rgba(0,80,255,0)');
-    ctx.fillStyle = grad2;
-    ctx.beginPath(); ctx.ellipse(ox,2,4,12*fl,0,0,Math.PI*2); ctx.fill();
+let starGeo3D, starPosAttr, starPoints3D;
+const NUM_STARS = 1400;
+
+// ─── Scene init ──────────────────────────────────────
+function initThree() {
+  renderer3D = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer3D.setSize(W, H);
+  renderer3D.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer3D.setClearColor(0x00020e);
+
+  scene3D = new THREE.Scene();
+  scene3D.fog = new THREE.Fog(0x00010a, 2000, 4000);
+
+  camera3D = new THREE.PerspectiveCamera(60, W / H, 1, 5000);
+  camera3D.position.set(W / 2, 500, 1200);
+  camera3D.lookAt(W / 2, 0, 400);
+
+  // Lighting
+  scene3D.add(new THREE.AmbientLight(0x223355, 3.5));
+  const key = new THREE.DirectionalLight(0x5588ff, 4);
+  key.position.set(300, 600, 200);
+  scene3D.add(key);
+  const fill = new THREE.DirectionalLight(0xff4400, 0.5);
+  fill.position.set(-200, -100, 900);
+  scene3D.add(fill);
+
+  // Scrolling grid floor
+  const grid = new THREE.GridHelper(2400, 48, 0x002244, 0x001133);
+  grid.position.set(W / 2, -10, H / 2);
+  scene3D.add(grid);
+
+  initStars();
+  initBulletPools();
+  initParticleSystem3D();
+  initShieldMesh();
+}
+
+function disposeGroup(g) {
+  g.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+    }
   });
-  ctx.restore();
-
-  // Ship body
-  const hw = p.w/2, hh = p.h/2;
-  // main body gradient
-  const grd = ctx.createLinearGradient(-hw,0,hw,0);
-  grd.addColorStop(0,'#1a4a7a');
-  grd.addColorStop(0.5,'#5af');
-  grd.addColorStop(1,'#1a4a7a');
-  ctx.fillStyle = grd;
-  ctx.beginPath();
-  ctx.moveTo(0, -hh);
-  ctx.lineTo(-hw, hh*0.5);
-  ctx.lineTo(-hw*0.3, hh*0.2);
-  ctx.lineTo(-hw*0.2, hh);
-  ctx.lineTo( hw*0.2, hh);
-  ctx.lineTo( hw*0.3, hh*0.2);
-  ctx.lineTo( hw, hh*0.5);
-  ctx.closePath();
-  ctx.fill();
-
-  // cockpit
-  ctx.fillStyle = '#0ff8';
-  ctx.beginPath();
-  ctx.ellipse(0, -hh*0.15, hw*0.22, hh*0.28, 0, 0, Math.PI*2);
-  ctx.fill();
-
-  // wing highlight
-  ctx.strokeStyle = '#7df8';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(-hw*0.7, hh*0.2);
-  ctx.lineTo(0, -hh*0.3);
-  ctx.lineTo(hw*0.7, hh*0.2);
-  ctx.stroke();
-
-  ctx.restore();
 }
 
-function drawBullets() {
-  for (const b of bullets) {
-    ctx.save();
-    const g = ctx.createLinearGradient(b.x, b.y+14, b.x, b.y-14);
-    g.addColorStop(0,'rgba(0,200,255,0)');
-    g.addColorStop(0.5,'#0ff');
-    g.addColorStop(1,'rgba(255,255,255,0.9)');
-    ctx.fillStyle = g;
-    ctx.shadowColor = '#0ff';
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.ellipse(b.x, b.y, 3, 10, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.restore();
+// ─── Stars (3D) ──────────────────────────────────────
+function initStars() {
+  if (starPoints3D) { scene3D.remove(starPoints3D); starGeo3D.dispose(); }
+  const pos = new Float32Array(NUM_STARS * 3);
+  for (let i = 0; i < NUM_STARS; i++) {
+    pos[i*3]   = Math.random() * 1400 - 400;
+    pos[i*3+1] = Math.random() * 280 - 30;
+    pos[i*3+2] = Math.random() * 1600;
   }
+  starGeo3D = new THREE.BufferGeometry();
+  starPosAttr = new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage);
+  starGeo3D.setAttribute('position', starPosAttr);
+  starPoints3D = new THREE.Points(starGeo3D,
+    new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, transparent: true, opacity: 0.85 }));
+  scene3D.add(starPoints3D);
 }
 
-function drawEBullets() {
-  for (const b of eBullets) {
-    ctx.save();
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = b.color;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-function drawEnemies() {
-  for (const e of enemies) {
-    ctx.save();
-    const flash = e.flashTimer > 0;
-    const cx = e.x;
-    const cy = e.y;
-    ctx.translate(cx, cy);
-
-    if (e.behavior === 'boss') {
-      drawBoss(e, flash);
-    } else {
-      drawEnemyShip(e, flash);
+function updateStars(dt) {
+  if (!starPosAttr) return;
+  const pos = starPosAttr.array;
+  for (let i = 0; i < NUM_STARS; i++) {
+    pos[i*3+2] += dt * 75;
+    if (pos[i*3+2] > 1500) {
+      pos[i*3]   = Math.random() * 1400 - 400;
+      pos[i*3+1] = Math.random() * 280 - 30;
+      pos[i*3+2] = -200;
     }
-
-    // HP bar (only if damaged)
-    if (e.hp < e.maxHp && e.hp > 0) {
-      const bw = e.w + 10;
-      const bx = -bw/2;
-      const by = -e.h/2 - 10;
-      ctx.fillStyle = '#300';
-      ctx.fillRect(bx, by, bw, 5);
-      ctx.fillStyle = e.behavior==='boss' ? '#f40' : '#0f6';
-      ctx.fillRect(bx, by, bw * (e.hp/e.maxHp), 5);
-    }
-
-    ctx.restore();
   }
+  starPosAttr.needsUpdate = true;
 }
 
-function drawEnemyShip(e, flash) {
-  const hw = e.w/2, hh = e.h/2;
-  const col = flash ? '#fff' : e.color;
+// ─── Player mesh ─────────────────────────────────────
+function createPlayerMesh() {
+  const g = new THREE.Group();
+  function makeWingGeo(s) {
+    const v = new Float32Array([0,0,-13, s*24,-2.5,3, s*7,0,15, 0,0,11]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(v, 3));
+    geo.setIndex([0,1,2, 0,2,3]);
+    geo.computeVertexNormals();
+    return geo;
+  }
+  // Fuselage
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(12, 5, 34),
+    new THREE.MeshStandardMaterial({ color:0x1a5a9a, metalness:0.8, roughness:0.2,
+      emissive:0x0a2244, emissiveIntensity:0.4 })));
+  // Nose (points toward -Z = toward enemies)
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(4, 18, 5),
+    new THREE.MeshStandardMaterial({ color:0x44aaff, metalness:0.9, roughness:0.1,
+      emissive:0x0055aa, emissiveIntensity:0.5 }));
+  nose.rotation.x = Math.PI/2;  nose.position.z = -25;  g.add(nose);
+  // Wings
+  const wMat = new THREE.MeshStandardMaterial({ color:0x0a3a6a, metalness:0.7, roughness:0.3, side:THREE.DoubleSide });
+  g.add(new THREE.Mesh(makeWingGeo(-1), wMat));
+  g.add(new THREE.Mesh(makeWingGeo( 1), wMat));
+  // Cockpit dome
+  const ckGeo = new THREE.SphereGeometry(4, 10, 8, 0, Math.PI*2, 0, Math.PI*0.55);
+  ckGeo.rotateX(Math.PI);
+  const cockpit = new THREE.Mesh(ckGeo,
+    new THREE.MeshStandardMaterial({ color:0x00ffff, emissive:0x008888, emissiveIntensity:0.9,
+      transparent:true, opacity:0.85, metalness:0.1, roughness:0.05 }));
+  cockpit.position.set(0, 4, -5);  g.add(cockpit);
+  // Engine nozzles + animated flame cones
+  const flameMeshes = [];
+  [-5, 5].forEach(ox => {
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(2, 3, 10, 8),
+      new THREE.MeshStandardMaterial({ color:0x223355, metalness:0.95, roughness:0.1 }));
+    nozzle.rotation.x = Math.PI/2;  nozzle.position.set(ox, -0.5, 17);  g.add(nozzle);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(2.2, 16, 8),
+      new THREE.MeshBasicMaterial({ color:0x44aaff, transparent:true, opacity:0.75 }));
+    flame.rotation.x = -Math.PI/2;  flame.position.set(ox, -0.5, 28);
+    g.add(flame);  flameMeshes.push(flame);
+  });
+  g.userData.flames = flameMeshes;
+  // Gun barrels
+  [-5, 5].forEach(ox => {
+    const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 12, 6),
+      new THREE.MeshStandardMaterial({ color:0x334466, metalness:0.9, roughness:0.1 }));
+    gun.rotation.x = Math.PI/2;  gun.position.set(ox, -1, -20);  g.add(gun);
+  });
+  // Engine glow
+  const el = new THREE.PointLight(0x33aaff, 3, 80);  el.position.set(0, 0, 24);  g.add(el);
+  // Hit flash
+  const fl = new THREE.PointLight(0xffffff, 0, 65);  g.add(fl);
+  g.userData.flashLight = fl;
+  return g;
+}
 
-  ctx.shadowColor = col;
-  ctx.shadowBlur = flash ? 20 : 8;
+// ─── Enemy meshes ────────────────────────────────────
+function createEnemyMesh(type) {
+  const g = new THREE.Group();
+  const fl = new THREE.PointLight(0xffffff, 0, 65);  g.add(fl);
+  g.userData.flashLight = fl;
 
-  ctx.fillStyle = col;
-
-  switch(e.behavior) {
-    case 'zigzag':
-    case 'straight': {
-      // Basic fighter (pointing down)
-      ctx.beginPath();
-      ctx.moveTo(0, hh);
-      ctx.lineTo(-hw, -hh*0.5);
-      ctx.lineTo(-hw*0.3,-hh);
-      ctx.lineTo(hw*0.3, -hh);
-      ctx.lineTo(hw, -hh*0.5);
-      ctx.closePath();
-      ctx.fill();
-      // cockpit
-      ctx.fillStyle = '#fff6';
-      ctx.beginPath(); ctx.ellipse(0, hh*0.1, hw*0.2, hh*0.25, 0,0,Math.PI*2); ctx.fill();
+  switch (type) {
+    case 'grunt': {
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(11, 6, 26),
+        new THREE.MeshStandardMaterial({ color:0xcc1111, metalness:0.7, roughness:0.25,
+          emissive:0x440000, emissiveIntensity:0.3 })));
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(3.5, 16, 4),
+        new THREE.MeshStandardMaterial({ color:0xff4444, metalness:0.9, roughness:0.1,
+          emissive:0x882222, emissiveIntensity:0.5 }));
+      nose.rotation.x = -Math.PI/2;  nose.position.z = 21;  g.add(nose);
+      [-1, 1].forEach(s => {
+        const w = new THREE.Mesh(new THREE.BoxGeometry(18, 2, 12),
+          new THREE.MeshStandardMaterial({ color:0x991111, metalness:0.6, roughness:0.4 }));
+        w.position.set(s*13, -1, -4);  g.add(w);
+      });
+      g.add(new THREE.PointLight(0xff2222, 2.5, 55));
       break;
     }
-    case 'sine': {
-      // Diamond shape
-      ctx.beginPath();
-      ctx.moveTo(0, hh);
-      ctx.lineTo(-hw, 0);
-      ctx.lineTo(0, -hh);
-      ctx.lineTo(hw, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#fff5';
-      ctx.beginPath(); ctx.arc(0,0,hw*0.3,0,Math.PI*2); ctx.fill();
+    case 'weaver': {
+      g.add(new THREE.Mesh(new THREE.OctahedronGeometry(14, 0),
+        new THREE.MeshStandardMaterial({ color:0xaa44ff, metalness:0.9, roughness:0.05,
+          emissive:0x6611aa, emissiveIntensity:0.6, transparent:true, opacity:0.9 })));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(17, 2, 8, 32),
+        new THREE.MeshStandardMaterial({ color:0xcc66ff, emissive:0xaa33ff, emissiveIntensity:0.8 }));
+      ring.rotation.x = Math.PI/2;  g.add(ring);
+      g.userData.animRing = ring;
+      g.add(new THREE.PointLight(0xaa44ff, 3, 65));
       break;
     }
-    case 'dash': {
-      // Wide dart
-      ctx.beginPath();
-      ctx.moveTo(0, hh*0.8);
-      ctx.lineTo(-hw, hh*0.2);
-      ctx.lineTo(-hw*0.6,-hh);
-      ctx.lineTo(hw*0.6,-hh);
-      ctx.lineTo(hw, hh*0.2);
-      ctx.closePath();
-      ctx.fill();
-      // engines
-      ctx.fillStyle = '#0af8';
-      ctx.fillRect(-hw*0.7,-hh,-hw*0.25,hh*0.6);
-      ctx.fillRect(hw*0.45,-hh,hw*0.25,hh*0.6);
+    case 'dasher': {
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(36, 4, 20),
+        new THREE.MeshStandardMaterial({ color:0x1166bb, metalness:0.8, roughness:0.2,
+          emissive:0x003366, emissiveIntensity:0.3 })));
+      [-1, 1].forEach(s => {
+        const w = new THREE.Mesh(new THREE.BoxGeometry(14, 2, 24),
+          new THREE.MeshStandardMaterial({ color:0x2288ff, metalness:0.7, roughness:0.2 }));
+        w.position.set(s*22, 0, -2);  w.rotation.y = s*0.25;  g.add(w);
+      });
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(5, 8, 6),
+        new THREE.MeshStandardMaterial({ color:0x55ccff, emissive:0x2288aa, emissiveIntensity:0.7 })));
+      g.add(new THREE.PointLight(0x4499ff, 2.5, 65));
       break;
     }
     case 'tank': {
-      // Blocky
-      ctx.fillRect(-hw,-hh,e.w,e.h);
-      ctx.fillStyle = '#fff4';
-      ctx.fillRect(-hw*0.3,-hh,hw*0.6,hh*1.2);
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(40, 10, 30),
+        new THREE.MeshStandardMaterial({ color:0xcc7700, metalness:0.6, roughness:0.4,
+          emissive:0x442200, emissiveIntensity:0.2 })));
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(30, 3, 24),
+        new THREE.MeshStandardMaterial({ color:0xffaa00, metalness:0.7, roughness:0.3 }));
+      plate.position.y = 6;  g.add(plate);
+      [-10, 10].forEach(ox => {
+        const turret = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 8, 8),
+          new THREE.MeshStandardMaterial({ color:0x885500, metalness:0.8, roughness:0.2 }));
+        turret.position.set(ox, 8, 0);  g.add(turret);
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 14, 6),
+          new THREE.MeshStandardMaterial({ color:0x444400, metalness:0.9, roughness:0.1 }));
+        barrel.rotation.x = Math.PI/2;  barrel.position.set(ox, 8, 14);  g.add(barrel);
+      });
+      const tnose = new THREE.Mesh(new THREE.ConeGeometry(6, 20, 6),
+        new THREE.MeshStandardMaterial({ color:0xffaa00, metalness:0.9, roughness:0.1,
+          emissive:0xcc7700, emissiveIntensity:0.4 }));
+      tnose.rotation.x = -Math.PI/2;  tnose.position.z = 25;  g.add(tnose);
+      g.add(new THREE.PointLight(0xffaa00, 3, 75));
       break;
     }
     case 'sniper': {
-      // Thin needle
-      ctx.beginPath();
-      ctx.moveTo(0, hh);
-      ctx.lineTo(-hw*0.5, 0);
-      ctx.lineTo(-hw*0.2,-hh);
-      ctx.lineTo(hw*0.2, -hh);
-      ctx.lineTo(hw*0.5, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = col;
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0,-hh); ctx.lineTo(0,-hh-12); ctx.stroke();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(2, 4, 38, 6),
+        new THREE.MeshStandardMaterial({ color:0x00cc88, metalness:0.85, roughness:0.15,
+          emissive:0x004433, emissiveIntensity:0.3 }));
+      body.rotation.x = Math.PI/2;  g.add(body);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.5, 22, 6),
+        new THREE.MeshStandardMaterial({ color:0x00ff99, metalness:0.9, roughness:0.1,
+          emissive:0x00aa55, emissiveIntensity:0.5 }));
+      barrel.rotation.x = Math.PI/2;  barrel.position.z = 30;  g.add(barrel);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 6),
+        new THREE.MeshBasicMaterial({ color:0x00ffcc }));
+      tip.position.z = 42;  g.add(tip);
+      const sl = new THREE.PointLight(0x00ffaa, 3, 65);  sl.position.z = 40;  g.add(sl);
       break;
     }
     case 'bomber': {
-      // Rounded bomb shape
-      ctx.beginPath();
-      ctx.ellipse(0, 0, hw, hh, 0,0,Math.PI*2);
-      ctx.fill();
-      ctx.fillStyle = '#fff4';
-      ctx.beginPath(); ctx.arc(0,-hh*0.2,hw*0.25,0,Math.PI*2); ctx.fill();
+      const hull = new THREE.Mesh(new THREE.SphereGeometry(15, 12, 10),
+        new THREE.MeshStandardMaterial({ color:0xff88aa, metalness:0.6, roughness:0.3,
+          emissive:0x441122, emissiveIntensity:0.2 }));
+      hull.scale.y = 0.6;  g.add(hull);
+      g.add(new THREE.Mesh(new THREE.TorusGeometry(17, 2, 4, 20),
+        new THREE.MeshStandardMaterial({ color:0xff4488, metalness:0.7, roughness:0.2 })));
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        const pod = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2, 10, 6),
+          new THREE.MeshStandardMaterial({ color:0xcc3366, metalness:0.8, roughness:0.2 }));
+        pod.rotation.x = Math.PI/2;
+        pod.position.set(Math.cos(a)*13, Math.sin(a)*7, 8);  g.add(pod);
+      }
+      g.add(new THREE.PointLight(0xff44aa, 3, 65));
       break;
     }
+    default: {
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(20, 8, 20),
+        new THREE.MeshStandardMaterial({ color:0xff4400 })));
+      g.add(new THREE.PointLight(0xff4400, 2, 50));
+    }
   }
+  return g;
 }
 
-function drawBoss(e, flash) {
-  const hw = e.w/2, hh = e.h/2;
-  const pct = e.hp / e.maxHp;
-  const col = flash ? '#fff' : (pct > 0.66 ? '#f40' : pct > 0.33 ? '#f80' : '#f00');
-
-  ctx.shadowColor = col;
-  ctx.shadowBlur = flash ? 40 : 20;
-
-  // Rotating aura
-  ctx.save();
-  ctx.rotate(e.bossAngle);
-  for (let i=0;i<6;i++) {
-    const a = (Math.PI*2/6)*i;
-    ctx.strokeStyle = `rgba(255,80,0,${0.3+0.3*Math.sin(e.bossAngle*2+i)})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a)*(hw+4), Math.sin(a)*(hh+4));
-    ctx.lineTo(Math.cos(a+Math.PI)*(hw+4), Math.sin(a+Math.PI)*(hh+4));
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // Main body
-  ctx.fillStyle = col;
-  ctx.beginPath();
-  ctx.moveTo(0, hh*0.9);
-  ctx.lineTo(-hw, hh*0.4);
-  ctx.lineTo(-hw*0.6, -hh*0.2);
-  ctx.lineTo(-hw*0.3, -hh);
-  ctx.lineTo(hw*0.3, -hh);
-  ctx.lineTo(hw*0.6, -hh*0.2);
-  ctx.lineTo(hw, hh*0.4);
-  ctx.closePath();
-  ctx.fill();
-
-  // Core
-  const coreGrad = ctx.createRadialGradient(0,0,4,0,0,hw*0.4);
-  coreGrad.addColorStop(0,'#fff');
-  coreGrad.addColorStop(0.4, col);
-  coreGrad.addColorStop(1,'transparent');
-  ctx.fillStyle = coreGrad;
-  ctx.beginPath(); ctx.arc(0,0,hw*0.4,0,Math.PI*2); ctx.fill();
-
-  // Side cannons
-  [-hw*0.65, hw*0.65].forEach(ox => {
-    ctx.fillStyle = '#333';
-    ctx.fillRect(ox-5, -6, 10, 20);
-    ctx.fillStyle = col;
-    ctx.fillRect(ox-3, -8, 6, 6);
+function createBossMesh() {
+  const g = new THREE.Group();
+  const fl = new THREE.PointLight(0xffffff, 0, 100);  g.add(fl);
+  g.userData.flashLight = fl;
+  // Hull
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(76, 18, 60),
+    new THREE.MeshStandardMaterial({ color:0xff4400, metalness:0.7, roughness:0.2,
+      emissive:0x881100, emissiveIntensity:0.3 })));
+  // Superstructure
+  const sup = new THREE.Mesh(new THREE.BoxGeometry(42, 12, 44),
+    new THREE.MeshStandardMaterial({ color:0xff6600, metalness:0.8, roughness:0.2,
+      emissive:0x552200, emissiveIntensity:0.4 }));
+  sup.position.y = 15;  g.add(sup);
+  // Glowing energy core
+  const core = new THREE.Mesh(new THREE.SphereGeometry(14, 16, 12),
+    new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xff8800, emissiveIntensity:1.5,
+      metalness:0, roughness:0 }));
+  core.position.y = 10;  g.add(core);
+  g.userData.core = core;
+  // Side wings + cannon pairs
+  [-1, 1].forEach(s => {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(30, 8, 46),
+      new THREE.MeshStandardMaterial({ color:0xcc3300, metalness:0.7, roughness:0.3 }));
+    wing.position.set(s*52, 0, -2);  wing.rotation.y = s*0.18;  g.add(wing);
+    [10, 28].forEach(oz => {
+      const cannon = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 18, 8),
+        new THREE.MeshStandardMaterial({ color:0x441100, metalness:0.9, roughness:0.1 }));
+      cannon.rotation.x = Math.PI/2;  cannon.position.set(s*52, 0, oz);  g.add(cannon);
+    });
   });
-
-  // Phase indicator eyes
-  for (let i=0;i<3;i++) {
-    const lit = i >= (2 - e.bossPhase);
-    ctx.fillStyle = lit ? '#fff' : '#440';
-    ctx.beginPath(); ctx.arc(-hw*0.3+i*hw*0.3, -hh*0.4, 5, 0, Math.PI*2); ctx.fill();
+  // Rotating orbital ring
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(28, 3.5, 8, 40),
+    new THREE.MeshStandardMaterial({ color:0xff8800, emissive:0xff4400, emissiveIntensity:0.8,
+      metalness:0.6, roughness:0.2 }));
+  g.add(ring);  g.userData.ring = ring;
+  // Phase gems
+  const gems = [];
+  for (let i = 0; i < 3; i++) {
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(5, 0),
+      new THREE.MeshStandardMaterial({ color:0xffff00, emissive:0xffcc00, emissiveIntensity:1.5 }));
+    gem.position.set(-20 + i*20, 22, -10);  g.add(gem);  gems.push(gem);
   }
-
-  // Boss HP bar (wide)
-  const bw = e.w*1.2;
-  ctx.fillStyle = '#400';
-  ctx.fillRect(-bw/2, hh+14, bw, 8);
-  ctx.fillStyle = pct > 0.5 ? '#f80' : '#f00';
-  ctx.fillRect(-bw/2, hh+14, bw*pct, 8);
-  ctx.strokeStyle = '#f408';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(-bw/2, hh+14, bw, 8);
+  g.userData.gems = gems;
+  const bl = new THREE.PointLight(0xff4400, 6, 200);  bl.position.y = 10;  g.add(bl);
+  g.userData.bossLight = bl;
+  return g;
 }
 
-function drawParticles() {
-  for (const p of particles) {
-    ctx.save();
-    ctx.globalAlpha = p.alpha;
-    if (p.ring) {
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = 2;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r * (1 - p.alpha*0.5), 0, Math.PI*2);
-      ctx.stroke();
+// ─── Bullet pools ─────────────────────────────────────
+function initBulletPools() {
+  const pGeo = new THREE.CylinderGeometry(1.5, 1.5, 18, 8);
+  const pMat = new THREE.MeshBasicMaterial({ color:0x00ffff });
+  for (let i = 0; i < POOL_PBULLET; i++) {
+    const mesh = new THREE.Mesh(pGeo, pMat);
+    mesh.rotation.x = Math.PI/2;
+    const grp = new THREE.Group();
+    grp.add(mesh);
+    grp.add(new THREE.PointLight(0x00ffff, 2, 28));
+    grp.visible = false;
+    scene3D.add(grp);
+    pBulletMeshes.push(grp);
+  }
+  const eGeo = new THREE.SphereGeometry(4, 8, 6);
+  for (let i = 0; i < POOL_EBULLET; i++) {
+    const sphere = new THREE.Mesh(eGeo, new THREE.MeshBasicMaterial({ color:0xff4400 }));
+    const light  = new THREE.PointLight(0xff4400, 1.5, 22);
+    const grp    = new THREE.Group();
+    grp.add(sphere);  grp.add(light);
+    grp.visible = false;
+    scene3D.add(grp);
+    eBulletData.push({ grp, sphere, light });
+  }
+}
+
+// ─── Particle system ─────────────────────────────────
+function initParticleSystem3D() {
+  partPos = new THREE.BufferAttribute(new Float32Array(MAX_PARTS*3), 3).setUsage(THREE.DynamicDrawUsage);
+  partCol = new THREE.BufferAttribute(new Float32Array(MAX_PARTS*3), 3).setUsage(THREE.DynamicDrawUsage);
+  partGeo = new THREE.BufferGeometry();
+  partGeo.setAttribute('position', partPos);
+  partGeo.setAttribute('color',    partCol);
+  partPoints3D = new THREE.Points(partGeo,
+    new THREE.PointsMaterial({ size:6, vertexColors:true, transparent:true,
+      blending:THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true }));
+  scene3D.add(partPoints3D);
+}
+
+// ─── Shield mesh ─────────────────────────────────────
+function initShieldMesh() {
+  shieldMesh3D = new THREE.Mesh(
+    new THREE.SphereGeometry(28, 16, 12),
+    new THREE.MeshStandardMaterial({ color:0x44aaff, transparent:true, opacity:0.35,
+      emissive:0x2266aa, emissiveIntensity:0.5, side:THREE.FrontSide,
+      metalness:0.1, roughness:0.1 }));
+  shieldMesh3D.visible = false;
+  scene3D.add(shieldMesh3D);
+}
+
+// ─── Pickup mesh ─────────────────────────────────────
+function createPickupMesh() {
+  const g = new THREE.Group();
+  const hex = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 5, 6),
+    new THREE.MeshStandardMaterial({ color:0xffcc00, emissive:0xffaa00, emissiveIntensity:1.2,
+      metalness:0.5, roughness:0.2 }));
+  hex.rotation.x = Math.PI/2;  g.add(hex);
+  g.add(new THREE.PointLight(0xffcc00, 2, 45));
+  return g;
+}
+
+// ─── Scene reset (called from startGame) ─────────────
+function resetScene3D() {
+  for (const mesh of enemyMesh3DMap.values()) { scene3D.remove(mesh); disposeGroup(mesh); }
+  enemyMesh3DMap.clear();
+  for (const mesh of pickupMesh3DMap.values()) scene3D.remove(mesh);
+  pickupMesh3DMap.clear();
+  pBulletMeshes.forEach(m => { m.visible = false; });
+  eBulletData.forEach(d => { d.grp.visible = false; });
+  if (playerMesh3D) { scene3D.remove(playerMesh3D); disposeGroup(playerMesh3D); }
+  playerMesh3D = createPlayerMesh();
+  scene3D.add(playerMesh3D);
+  if (shieldMesh3D) shieldMesh3D.visible = false;
+}
+
+// ─── Per-frame sync functions ─────────────────────────
+function syncPlayerMesh3D() {
+  if (!playerMesh3D) return;
+  if (state !== 'playing' && state !== 'paused') { playerMesh3D.visible = false; return; }
+  const p = player;
+  if (p.invincible > 0 && Math.floor(p.invincible * 8) % 2 === 0) {
+    playerMesh3D.visible = false;
+    if (shieldMesh3D) shieldMesh3D.visible = false;
+    return;
+  }
+  playerMesh3D.visible = true;
+  playerMesh3D.position.set(p.x, 8, p.y);
+  // Animate engine flames
+  const fl = 0.6 + 0.4 * Math.sin(p.thrustFlicker);
+  if (playerMesh3D.userData.flames) {
+    playerMesh3D.userData.flames.forEach(f => {
+      f.scale.set(1, fl, 1);
+      f.material.opacity = fl * 0.75;
+    });
+  }
+  // Shield bubble
+  if (shieldMesh3D) {
+    const hasShield = p.shield > 0;
+    shieldMesh3D.visible = hasShield;
+    if (hasShield) {
+      shieldMesh3D.position.set(p.x, 8, p.y);
+      shieldMesh3D.material.opacity = (p.shield / p.shieldMax) * 0.45;
+    }
+  }
+  if (playerMesh3D.userData.flashLight) {
+    playerMesh3D.userData.flashLight.intensity = p.invincible > 0 ? 5 : 0;
+  }
+}
+
+function syncEnemyMeshes3D() {
+  // Remove dead enemies
+  for (const [e, mesh] of enemyMesh3DMap) {
+    if (!enemies.includes(e)) {
+      scene3D.remove(mesh);  disposeGroup(mesh);
+      enemyMesh3DMap.delete(e);
+    }
+  }
+  // Add new, update all
+  for (const e of enemies) {
+    if (!enemyMesh3DMap.has(e)) {
+      const mesh = e.behavior === 'boss' ? createBossMesh() : createEnemyMesh(e.type);
+      scene3D.add(mesh);  enemyMesh3DMap.set(e, mesh);
+    }
+    const mesh = enemyMesh3DMap.get(e);
+    mesh.position.set(e.x, 8, e.y);
+    // Weaver ring spin
+    if (mesh.userData.animRing) {
+      mesh.userData.animRing.rotation.z = e.t * 2;
+      mesh.userData.animRing.rotation.y = e.t;
+    }
+    // Boss-specific animations
+    if (e.behavior === 'boss') {
+      if (mesh.userData.ring) {
+        mesh.userData.ring.rotation.x = Math.PI/2 + e.bossAngle * 0.5;
+        mesh.userData.ring.rotation.y = e.bossAngle;
+      }
+      if (mesh.userData.gems) {
+        mesh.userData.gems.forEach((gem, i) => {
+          gem.material.emissiveIntensity = i >= (2 - e.bossPhase) ? 1.5 : 0.1;
+        });
+      }
+      if (mesh.userData.core) {
+        const pct = e.hp / e.maxHp;
+        mesh.userData.core.material.emissive.setHex(pct > 0.66 ? 0xff8800 : pct > 0.33 ? 0xff4400 : 0xff0000);
+      }
+      if (mesh.userData.bossLight) {
+        const pct = e.hp / e.maxHp;
+        mesh.userData.bossLight.color.setHex(pct > 0.66 ? 0xff8800 : pct > 0.33 ? 0xff5500 : 0xff0000);
+      }
+    }
+    // Hit flash
+    if (mesh.userData.flashLight) {
+      mesh.userData.flashLight.intensity = e.flashTimer > 0 ? 10 : 0;
+    }
+  }
+}
+
+function syncBullets3D() {
+  for (let i = 0; i < POOL_PBULLET; i++) {
+    if (i < bullets.length) {
+      pBulletMeshes[i].visible = true;
+      pBulletMeshes[i].position.set(bullets[i].x, 8, bullets[i].y);
     } else {
-      ctx.fillStyle = p.color;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 6;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.5, p.r * p.alpha), 0, Math.PI*2);
-      ctx.fill();
+      pBulletMeshes[i].visible = false;
     }
-    ctx.restore();
   }
 }
 
-function drawPickups() {
+function syncEBullets3D() {
+  const tmpCol = new THREE.Color();
+  for (let i = 0; i < POOL_EBULLET; i++) {
+    const d = eBulletData[i];
+    if (i < eBullets.length) {
+      const b = eBullets[i];
+      d.grp.visible = true;
+      d.grp.position.set(b.x, 8, b.y);
+      tmpCol.set(b.color);
+      d.sphere.material.color.copy(tmpCol);
+      d.light.color.copy(tmpCol);
+      d.grp.scale.setScalar(b.r / 4);
+    } else {
+      d.grp.visible = false;
+    }
+  }
+}
+
+function syncParticles3D() {
+  const pos = partPos.array;
+  const col = partCol.array;
+  const n   = Math.min(particles.length, MAX_PARTS);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    const p = particles[i];
+    pos[i*3]   = p.x;
+    pos[i*3+1] = p.ring ? 14 : 8 + p.r * 0.4;
+    pos[i*3+2] = p.y;
+    tmp.set(p.color);
+    const a = p.alpha;
+    col[i*3]   = tmp.r * a;
+    col[i*3+1] = tmp.g * a;
+    col[i*3+2] = tmp.b * a;
+  }
+  for (let i = n; i < MAX_PARTS; i++) {
+    pos[i*3] = -9999;  pos[i*3+1] = 0;  pos[i*3+2] = 0;
+    col[i*3] = col[i*3+1] = col[i*3+2] = 0;
+  }
+  partPos.needsUpdate = true;
+  partCol.needsUpdate = true;
+}
+
+function syncPickups3D() {
+  // Remove collected
+  for (const [pk, mesh] of pickupMesh3DMap) {
+    if (!pickups.includes(pk)) { scene3D.remove(mesh);  pickupMesh3DMap.delete(pk); }
+  }
+  // Add new / update
   for (const pk of pickups) {
-    ctx.save();
-    ctx.translate(pk.x, pk.y);
-    ctx.rotate(pk.spin);
-    ctx.fillStyle = '#fc0';
-    ctx.shadowColor = '#fc0';
-    ctx.shadowBlur = 12;
-    ctx.globalAlpha = Math.min(1, pk.life * 0.4);
-    // Hexagon
-    ctx.beginPath();
-    for (let i=0;i<6;i++) {
-      const a = (Math.PI/3)*i - Math.PI/6;
-      i===0 ? ctx.moveTo(Math.cos(a)*8, Math.sin(a)*8) : ctx.lineTo(Math.cos(a)*8, Math.sin(a)*8);
+    if (!pickupMesh3DMap.has(pk)) {
+      const mesh = createPickupMesh();
+      scene3D.add(mesh);  pickupMesh3DMap.set(pk, mesh);
     }
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
+    const mesh = pickupMesh3DMap.get(pk);
+    mesh.position.set(pk.x, 8, pk.y);
+    mesh.rotation.y = pk.spin;
   }
 }
 
+// ─── HUD (2D overlay) ─────────────────────────────────
 function drawHUD() {
   const p = player;
-  ctx.save();
-  // Top bar background
-  ctx.fillStyle = 'rgba(0,4,16,0.7)';
-  ctx.fillRect(0, 0, W, 50);
-
-  // HP hearts
-  ctx.font = '16px Courier New';
-  ctx.textBaseline = 'middle';
-  for (let i=0; i<p.maxHp; i++) {
-    ctx.fillStyle = i < p.hp ? '#f44' : '#333';
-    ctx.fillText('♥', 12 + i*22, 20);
+  hudCtx.save();
+  hudCtx.fillStyle = 'rgba(0,4,16,0.7)';
+  hudCtx.fillRect(0, 0, W, 50);
+  hudCtx.font = '16px Courier New';
+  hudCtx.textBaseline = 'middle';
+  for (let i = 0; i < p.maxHp; i++) {
+    hudCtx.fillStyle = i < p.hp ? '#f44' : '#333';
+    hudCtx.fillText('♥', 12 + i*22, 20);
   }
-
-  // Shield
   if (p.shieldMax > 0) {
-    ctx.fillStyle = '#1a3a5c';
-    ctx.fillRect(12, 30, 80, 8);
-    ctx.fillStyle = '#4af';
-    ctx.shadowColor = '#4af';
-    ctx.shadowBlur = 6;
-    ctx.fillRect(12, 30, 80*(p.shield/p.shieldMax), 8);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#7df8';
-    ctx.font = '9px Courier New';
-    ctx.fillText('SHIELD', 16, 34);
+    hudCtx.fillStyle = '#1a3a5c';
+    hudCtx.fillRect(12, 30, 80, 8);
+    hudCtx.fillStyle = '#4af';
+    hudCtx.shadowColor = '#4af';  hudCtx.shadowBlur = 6;
+    hudCtx.fillRect(12, 30, 80 * (p.shield / p.shieldMax), 8);
+    hudCtx.shadowBlur = 0;
+    hudCtx.fillStyle = '#7df8';
+    hudCtx.font = '9px Courier New';
+    hudCtx.fillText('SHIELD', 16, 34);
   }
-
-  // Score
-  ctx.shadowColor = '#fff';
-  ctx.shadowBlur = 4;
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 15px Courier New';
-  ctx.textAlign = 'center';
-  ctx.fillText('SCORE', W/2, 16);
-  ctx.font = 'bold 18px Courier New';
-  ctx.fillText(score.toString().padStart(8,'0'), W/2, 36);
-
-  // Credits (top right)
-  ctx.shadowColor = '#fc0';
-  ctx.shadowBlur = 6;
-  ctx.fillStyle = '#fc0';
-  ctx.textAlign = 'right';
-  ctx.font = '13px Courier New';
-  ctx.fillText('CREDITS', W-12, 16);
-  ctx.font = 'bold 16px Courier New';
-  ctx.fillText(save.credits, W-12, 34);
-
-  // Wave indicator (top left of center area)
-  ctx.shadowColor = '#7df';
-  ctx.shadowBlur = 4;
-  ctx.fillStyle = '#7df';
-  ctx.textAlign = 'left';
-  ctx.font = '11px Courier New';
-  ctx.fillText('WAVE ' + wave, W/2 + 60, 16);
-
-  ctx.restore();
+  hudCtx.shadowColor = '#fff';  hudCtx.shadowBlur = 4;
+  hudCtx.fillStyle = '#fff';
+  hudCtx.font = 'bold 15px Courier New';
+  hudCtx.textAlign = 'center';
+  hudCtx.fillText('SCORE', W/2, 16);
+  hudCtx.font = 'bold 18px Courier New';
+  hudCtx.fillText(score.toString().padStart(8, '0'), W/2, 36);
+  hudCtx.shadowColor = '#fc0';  hudCtx.shadowBlur = 6;
+  hudCtx.fillStyle = '#fc0';
+  hudCtx.textAlign = 'right';
+  hudCtx.font = '13px Courier New';
+  hudCtx.fillText('CREDITS', W-12, 16);
+  hudCtx.font = 'bold 16px Courier New';
+  hudCtx.fillText(save.credits, W-12, 34);
+  hudCtx.shadowColor = '#7df';  hudCtx.shadowBlur = 4;
+  hudCtx.fillStyle = '#7df';
+  hudCtx.textAlign = 'left';
+  hudCtx.font = '11px Courier New';
+  hudCtx.fillText('WAVE ' + wave, W/2 + 60, 16);
+  hudCtx.restore();
 }
 
 function drawWaveAnnounce() {
-  const alpha = Math.min(1, waveBreak / waveBreakDuration) * Math.min(1, (waveBreakDuration-waveBreak)/0.3 * 1.5);
+  const alpha = Math.min(1, waveBreak / waveBreakDuration) *
+                Math.min(1, (waveBreakDuration - waveBreak) / 0.3 * 1.5);
   if (alpha <= 0) return;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const isBoss = (wave+1) % 5 === 0;
-  const text = isBoss ? '⚠ BOSS INCOMING ⚠' : ('WAVE ' + (wave+1));
-  ctx.shadowColor = isBoss ? '#f40' : '#0af';
-  ctx.shadowBlur = 20;
-  ctx.fillStyle = isBoss ? '#f84' : '#7df';
-  ctx.font = `bold ${isBoss?34:28}px Courier New`;
-  ctx.fillText(text, W/2, H/2);
+  hudCtx.save();
+  hudCtx.globalAlpha = alpha;
+  hudCtx.textAlign = 'center';
+  hudCtx.textBaseline = 'middle';
+  const isBoss = (wave + 1) % 5 === 0;
+  const text = isBoss ? '⚠ BOSS INCOMING ⚠' : ('WAVE ' + (wave + 1));
+  hudCtx.shadowColor = isBoss ? '#f40' : '#0af';
+  hudCtx.shadowBlur = 20;
+  hudCtx.fillStyle = isBoss ? '#f84' : '#7df';
+  hudCtx.font = `bold ${isBoss ? 34 : 28}px Courier New`;
+  hudCtx.fillText(text, W/2, H/2);
   if (!isBoss) {
-    ctx.font = '14px Courier New';
-    ctx.fillStyle = '#aaa';
-    ctx.shadowBlur = 0;
-    ctx.fillText('GET READY', W/2, H/2+36);
+    hudCtx.font = '14px Courier New';
+    hudCtx.fillStyle = '#aaa';  hudCtx.shadowBlur = 0;
+    hudCtx.fillText('GET READY', W/2, H/2 + 36);
   }
-  ctx.restore();
+  hudCtx.restore();
 }
+
 
 // ═══════════════════════════════════════════════════
 //  STATE TRANSITIONS
@@ -1376,6 +1534,7 @@ function startGame() {
   waveBreak = 0.5;
   bossActive = false;
   initStars();
+  resetScene3D();
   player = createPlayer();
   state = 'playing';
   hideAll();
@@ -1504,7 +1663,7 @@ document.getElementById('btnGoMenu').addEventListener('click', showMenu);
 // ═══════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════
-initStars();
+initThree();   // sets up renderer, scene, camera, lighting, stars, pools
 showMenu();
 raf = requestAnimationFrame(gameLoop);
 </script>
