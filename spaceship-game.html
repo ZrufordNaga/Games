@@ -925,6 +925,8 @@ let playerMesh3D, shieldMesh3D;
 const enemyMesh3DMap  = new Map();
 const pickupMesh3DMap = new Map();
 
+// Pre-allocated pools: 120 player bullets covers rapid-fire + spread upgrades,
+// 400 enemy bullets covers boss spiral patterns + many on-screen enemies.
 const POOL_PBULLET = 120;
 const POOL_EBULLET = 400;
 let pBulletMeshes = [];
@@ -1499,8 +1501,11 @@ function drawHUD() {
 }
 
 function drawWaveAnnounce() {
+  // Fade in over first 0.3 s, then hold, then fade out as waveBreak expires
+  const FADE_IN  = 0.3;
+  const FADE_MUL = 1.5;
   const alpha = Math.min(1, waveBreak / waveBreakDuration) *
-                Math.min(1, (waveBreakDuration - waveBreak) / 0.3 * 1.5);
+                Math.min(1, (waveBreakDuration - waveBreak) / FADE_IN * FADE_MUL);
   if (alpha <= 0) return;
   hudCtx.save();
   hudCtx.globalAlpha = alpha;
