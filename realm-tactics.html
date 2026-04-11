@@ -276,32 +276,30 @@ function initGame() {
 //  ANIMATED SETUP PHASE
 // ═══════════════════════════════════════════════════════
 function animateSetup() {
-  const types = Object.keys(PDEFS);
-  const picked = [];
-  const sh = shuffle([...types]);
-  for (let i = 0; i < PIECES_PER_SIDE; i++) picked.push(sh[i % sh.length]);
+  const types  = Object.keys(PDEFS);
+  const sh     = shuffle([...types]);
 
-  // Sort: melee (range=1) → front rows (rows 2-3), ranged → back rows (rows 0-1)
-  const frontCells = [], backCells = [];
-  for (let r = 0; r < 4; r++)
-    for (let c = 0; c < BSIZE; c++)
-      (r >= 2 ? frontCells : backCells).push({r, c});
+  // ── Build exactly PIECES_PER_SIDE (10) placements for RED ──────────────
+  // Row 3 = full front line (8 cols × 1 piece each).
+  // Row 2 = 2 support pieces at cols 2 and 5 (prefer ranged types).
+  // Mirror for BLUE: red row r  →  blue row (BSIZE-1-r), same column.
+  //   row 3 → row 4  (distance 1 → guaranteed melee combat)
+  //   row 2 → row 5  (distance 3 → reachable by ranged)
+  const colOrder   = shuffle([0,1,2,3,4,5,6,7]);   // random column order for visual variety
+  const rangedPool = shuffle(types.filter(t => PDEFS[t].range > 1));
+  const meleePool  = shuffle(types.filter(t => PDEFS[t].range === 1));
 
-  const meleePicked  = picked.filter(t => PDEFS[t].range === 1);
-  const rangedPicked = picked.filter(t => PDEFS[t].range > 1);
+  // 8 front-line pieces (row 3), columns in random order
+  const placements = colOrder.map((c, i) => ({
+    r: 3, c,
+    type: (i < meleePool.length ? meleePool[i] : sh[i % sh.length]),
+  }));
 
-  const sfr = shuffle(frontCells);
-  const sbk = shuffle(backCells);
-  const placements = [];
-  meleePicked.forEach((t, i) => { if (i < sfr.length) placements.push({r:sfr[i].r, c:sfr[i].c, type:t}); });
-  rangedPicked.forEach((t, i) => { if (i < sbk.length) placements.push({r:sbk[i].r, c:sbk[i].c, type:t}); });
-  // Fill any gaps with leftover cells
-  const used = new Set(placements.map(p=>`${p.r},${p.c}`));
-  const allCells = shuffle([...frontCells, ...backCells]).filter(z=>!used.has(`${z.r},${z.c}`));
-  while (placements.length < PIECES_PER_SIDE && allCells.length) {
-    const z = allCells.shift();
-    placements.push({r:z.r, c:z.c, type:sh[placements.length % sh.length]});
-  }
+  // 2 back-support pieces (row 2) at cols 2 and 5
+  const supportCols = [2, 5];
+  supportCols.forEach((c, i) => {
+    placements.push({ r: 2, c, type: rangedPool[i % rangedPool.length] });
+  });
 
   let i = 0;
   const newPieceIds = new Set();
@@ -319,9 +317,11 @@ function animateSetup() {
     }
     const {r, c, type} = placements[i];
     // Red piece
-    G.board[r][c] = mkPiece(type, 0);
-    newPieceIds.add(G.board[r][c].id);
-    // Mirror for blue: row (BSIZE-1-r), same col
+    if (!G.board[r][c]) {
+      G.board[r][c] = mkPiece(type, 0);
+      newPieceIds.add(G.board[r][c].id);
+    }
+    // Mirror for blue: row (BSIZE-1-r), same col — exact symmetric copy
     const mr = BSIZE - 1 - r;
     if (!G.board[mr][c]) {
       G.board[mr][c] = mkPiece(type, 1);
@@ -332,7 +332,7 @@ function animateSetup() {
     renderBoard(newPieceIds);
     renderLines();
     i++;
-    setupTimer = setTimeout(step, 165);
+    setupTimer = setTimeout(step, 175);
   }
   step();
 }
@@ -427,13 +427,14 @@ function doAttack(atk,ar,ac,tgt,tr,tc){
   tgt.hp=Math.max(0,tgt.hp-dmg);
   flashMap[tgt.id]='hit';
   logR(atk,` hits ${pn(tgt)} for ${dmg}`);
-  // Spawn attack trail
-  G.trails.push({fr:ar,fc:ac,tr,tc,owner:atk.owner,life:5,maxLife:5});
+  // Spawn attack trail — longer life for long-range shots
+  const dist = chebyshev(ar,ac,tr,tc);
+  G.trails.push({fr:ar,fc:ac,tr,tc,owner:atk.owner,life:Math.max(5,dist+3),maxLife:Math.max(5,dist+3),type:atk.special||'melee'});
   if(tgt.special==='counter'&&tgt.hp>0&&atk.hp>0){
     const cd=Math.max(1,dmg*0.4|0);
     atk.hp=Math.max(0,atk.hp-cd);flashMap[atk.id]='hit';
     logS(`${pn(tgt)} counters ${pn(atk)} for ${cd}!`);
-    G.trails.push({fr:tr,fc:tc,tr:ar,tc:ac,owner:tgt.owner,life:4,maxLife:4});
+    G.trails.push({fr:tr,fc:tc,tr:ar,tc:ac,owner:tgt.owner,life:4,maxLife:4,type:'counter'});
   }
   if(atk.special==='burn'  &&tgt.hp>0&&tgt.status.burn  ===0){tgt.status.burn  =4;logS(`${pn(tgt)} is burning! 🔥`);}
   if(atk.special==='poison'&&tgt.hp>0&&tgt.status.poison===0){tgt.status.poison=4;logS(`${pn(tgt)} is poisoned! 🟢`);}
@@ -448,7 +449,7 @@ function actHealer(p,r,c){
     inj[0].p.hp=Math.min(inj[0].p.maxHp,inj[0].p.hp+20);
     logS(`💚 ${pn(p)} heals ${pn(inj[0].p)} for 20 HP!`);
     flashMap[inj[0].p.id]='atk'; p.cooldown=p.spd;
-    G.trails.push({fr:r,fc:c,tr:inj[0].r,tc:inj[0].c,owner:p.owner,life:4,maxLife:4});
+    G.trails.push({fr:r,fc:c,tr:inj[0].r,tc:inj[0].c,owner:p.owner,life:4,maxLife:4,type:'heal'});
   }
 }
 
@@ -599,7 +600,7 @@ function renderLines(){
   const cx=c=>c*CELL+CELL/2;
   const cy=r=>r*CELL+CELL/2;
 
-  // Alliance connection lines (adjacent same-team pieces)
+  // ── Alliance connection lines (adjacent same-team pieces) ────────────
   const pieces=allPieces();
   for(let i=0;i<pieces.length;i++){
     for(let j=i+1;j<pieces.length;j++){
@@ -608,33 +609,75 @@ function renderLines(){
         const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
         ln.setAttribute('x1',cx(a.c)); ln.setAttribute('y1',cy(a.r));
         ln.setAttribute('x2',cx(b.c)); ln.setAttribute('y2',cy(b.r));
-        const col=a.p.owner===0?'rgba(255,140,100,0.35)':'rgba(100,160,255,0.35)';
+        const col=a.p.owner===0?'rgba(255,150,80,0.38)':'rgba(80,160,255,0.38)';
         ln.setAttribute('stroke',col);
-        ln.setAttribute('stroke-width','1.8');
-        ln.setAttribute('stroke-dasharray','4 3');
+        ln.setAttribute('stroke-width','2');
+        ln.setAttribute('stroke-dasharray','5 4');
         svg.appendChild(ln);
       }
     }
   }
 
-  // Attack trails
+  // ── Attack trails ────────────────────────────────────────────────────
   G.trails.forEach(t=>{
-    const frac=t.life/t.maxLife;
-    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1',cx(t.fc)); line.setAttribute('y1',cy(t.fr));
-    line.setAttribute('x2',cx(t.tc)); line.setAttribute('y2',cy(t.tr));
-    const r=t.owner===0?'255,100,50':'80,160,255';
-    line.setAttribute('stroke',`rgba(${r},${frac})`);
-    line.setAttribute('stroke-width', 2+frac*3);
-    line.setAttribute('stroke-linecap','round');
-    line.setAttribute('filter',t.owner===0?'url(#glow-r)':'url(#glow-b)');
-    svg.appendChild(line);
+    const frac  = t.life / t.maxLife;   // 1.0 → 0
+    const x1=cx(t.fc), y1=cy(t.fr), x2=cx(t.tc), y2=cy(t.tr);
 
-    // Arrowhead / impact dot at target
+    // Pick colour scheme by trail type
+    let rgb, healTrail=false;
+    if(t.type==='heal')          { rgb='80,255,120';  healTrail=true; }
+    else if(t.owner===0)         { rgb='255,110,40'; }  // red army → orange-red
+    else                         { rgb='60,160,255'; }  // blue army → sky blue
+    const filter=t.owner===0?'url(#glow-r)':'url(#glow-b)';
+
+    // 1. Main beam line
+    const beam=document.createElementNS('http://www.w3.org/2000/svg','line');
+    beam.setAttribute('x1',x1); beam.setAttribute('y1',y1);
+    beam.setAttribute('x2',x2); beam.setAttribute('y2',y2);
+    beam.setAttribute('stroke',`rgba(${rgb},${(frac*0.7).toFixed(2)})`);
+    beam.setAttribute('stroke-width', (1+frac*4).toFixed(1));
+    beam.setAttribute('stroke-linecap','round');
+    beam.setAttribute('filter',filter);
+    svg.appendChild(beam);
+
+    // 2. Source muzzle-flash circle (visible when trail is fresh)
+    if(frac > 0.5){
+      const mf=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      mf.setAttribute('cx',x1); mf.setAttribute('cy',y1);
+      mf.setAttribute('r', (3+(frac-0.5)*14).toFixed(1));
+      mf.setAttribute('fill',`rgba(${rgb},${((frac-0.5)*1.4).toFixed(2)})`);
+      mf.setAttribute('filter',filter);
+      svg.appendChild(mf);
+    }
+
+    // 3. Moving projectile ball — travels from source to target based on remaining life
+    //    At life=maxLife the ball is near the source; at life=1 it's at the target.
+    const progress = 1 - frac;   // 0 (just fired) → ~1 (about to expire)
+    const px = x1 + (x2-x1)*progress;
+    const py = y1 + (y2-y1)*progress;
+    const ball=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    ball.setAttribute('cx',px); ball.setAttribute('cy',py);
+    const ballR = healTrail ? (4+frac*5).toFixed(1) : (5+frac*6).toFixed(1);
+    ball.setAttribute('r', ballR);
+    ball.setAttribute('fill',`rgba(${rgb},${Math.min(1,frac*1.5).toFixed(2)})`);
+    ball.setAttribute('filter',filter);
+    svg.appendChild(ball);
+
+    // 4. Impact burst at target when trail is near-new (ball just arrived)
+    if(frac > 0.7){
+      const burst=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      burst.setAttribute('cx',x2); burst.setAttribute('cy',y2);
+      burst.setAttribute('r', ((1-frac)*30).toFixed(1));   // expands outward
+      burst.setAttribute('fill','none');
+      burst.setAttribute('stroke',`rgba(${rgb},${(frac-0.7).toFixed(2)})`);
+      burst.setAttribute('stroke-width','2');
+      svg.appendChild(burst);
+    }
+    // Sustained impact dot
     const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    dot.setAttribute('cx',cx(t.tc)); dot.setAttribute('cy',cy(t.tr));
-    dot.setAttribute('r', 4+frac*4);
-    dot.setAttribute('fill',`rgba(${r},${frac*0.7})`);
+    dot.setAttribute('cx',x2); dot.setAttribute('cy',y2);
+    dot.setAttribute('r', (3+frac*5).toFixed(1));
+    dot.setAttribute('fill',`rgba(${rgb},${(frac*0.65).toFixed(2)})`);
     svg.appendChild(dot);
   });
 }
