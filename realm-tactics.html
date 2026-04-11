@@ -276,59 +276,71 @@ function initGame() {
 //  ANIMATED SETUP PHASE
 // ═══════════════════════════════════════════════════════
 function animateSetup() {
-  const types  = Object.keys(PDEFS);
-  const sh     = shuffle([...types]);
+  const types = Object.keys(PDEFS);
 
-  // ── Build exactly PIECES_PER_SIDE (10) placements for RED ──────────────
-  // Row 3 = full front line (8 cols × 1 piece each).
-  // Row 2 = 2 support pieces at cols 2 and 5 (prefer ranged types).
-  // Mirror for BLUE: red row r  →  blue row (BSIZE-1-r), same column.
-  //   row 3 → row 4  (distance 1 → guaranteed melee combat)
-  //   row 2 → row 5  (distance 3 → reachable by ranged)
-  const colOrder   = shuffle([0,1,2,3,4,5,6,7]);   // random column order for visual variety
-  const rangedPool = shuffle(types.filter(t => PDEFS[t].range > 1));
-  const meleePool  = shuffle(types.filter(t => PDEFS[t].range === 1));
+  // ── Left-right symmetric layout within each team's own half ────────────
+  // 4 symmetric column pairs at the front line (row 3 for Red, row 4 for Blue):
+  //   (0,7)  (1,6)  (2,5)  (3,4)  — 8 pieces
+  // 1 symmetric column pair in the support row (row 2 / row 5):
+  //   (2,5)  — 2 pieces
+  // Total = 10 pieces per side (PIECES_PER_SIDE).
+  //
+  // Each column pair receives the SAME piece type so each team's half is
+  // visually symmetric when viewed from above.
+  //
+  // Blue mirrors Red vertically (row r → row BSIZE-1-r), so Blue's layout
+  // is also left-right symmetric within Blue's own half.
 
-  // 8 front-line pieces (row 3), columns in random order
-  const placements = colOrder.map((c, i) => ({
-    r: 3, c,
-    type: (i < meleePool.length ? meleePool[i] : sh[i % sh.length]),
-  }));
+  const meleeTypes  = shuffle(types.filter(t => PDEFS[t].range === 1));
+  const rangedTypes = shuffle(types.filter(t => PDEFS[t].range >  1));
 
-  // 2 back-support pieces (row 2) at cols 2 and 5
-  const supportCols = [2, 5];
-  supportCols.forEach((c, i) => {
-    placements.push({ r: 2, c, type: rangedPool[i % rangedPool.length] });
+  // 4 column pairs for the front row, each assigned a random melee type
+  const frontPairs = [[0,7],[1,6],[2,5],[3,4]];
+  // 1 ranged support pair in the row behind the front
+  const supportPair = [2, 5];
+  const supportType = rangedTypes[0];
+
+  const placements = [];
+  frontPairs.forEach((pair, pi) => {
+    const type = meleeTypes[pi % meleeTypes.length];
+    pair.forEach(c => placements.push({ r: 3, c, type }));
   });
+  supportPair.forEach(c => placements.push({ r: 2, c, type: supportType }));
+
+  // Shuffle so both sides of each pair animate in at roughly the same time
+  // rather than all left side first then all right side.
+  const shuffled = shuffle(placements);
 
   let i = 0;
   const newPieceIds = new Set();
 
   function step() {
-    if (i >= placements.length) {
+    if (i >= shuffled.length) {
       G.maxHP[0] = living(0).reduce((s,x)=>s+x.p.maxHp, 0);
       G.maxHP[1] = living(1).reduce((s,x)=>s+x.p.maxHp, 0);
       renderHUD();
-      document.getElementById('phase-banner').textContent = '✅ Bases Ready — Press Start Battle!';
+      document.getElementById('phase-banner').textContent = '✅ Bases Ready — Battle starts!';
       showControls('ready');
-      logS('🏰 Both bases built! Click ⚔️ Start Battle!');
+      logS('🏰 Both bases built! ⚔️ Battle starts automatically!');
       render();
+      // Auto-start the battle after a short pause so the player can see the setup
+      setupTimer = setTimeout(() => startBattle(), 1800);
       return;
     }
-    const {r, c, type} = placements[i];
+    const {r, c, type} = shuffled[i];
     // Red piece
     if (!G.board[r][c]) {
       G.board[r][c] = mkPiece(type, 0);
       newPieceIds.add(G.board[r][c].id);
     }
-    // Mirror for blue: row (BSIZE-1-r), same col — exact symmetric copy
+    // Mirror for blue: row (BSIZE-1-r), same col
     const mr = BSIZE - 1 - r;
     if (!G.board[mr][c]) {
       G.board[mr][c] = mkPiece(type, 1);
       newPieceIds.add(G.board[mr][c].id);
     }
     document.getElementById('phase-banner').textContent =
-      `🤖 AI Building Base... ${i+1} / ${placements.length}`;
+      `🤖 AI Building Base... ${i+1} / ${shuffled.length}`;
     renderBoard(newPieceIds);
     renderLines();
     i++;
