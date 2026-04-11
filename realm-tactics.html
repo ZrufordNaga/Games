@@ -9,59 +9,96 @@
 body{background:#0d1117;color:#e0e0e0;font-family:'Segoe UI',Tahoma,sans-serif;
   min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:10px 6px;user-select:none}
 h1{font-size:26px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;text-shadow:0 0 20px rgba(255,215,0,.4)}
-#phase-banner{font-size:14px;font-weight:bold;padding:4px 22px;border-radius:20px;margin-bottom:8px;
-  border:2px solid #ffd700;color:#ffd700;min-height:28px;text-align:center}
+#phase-banner{font-size:14px;font-weight:bold;padding:5px 24px;border-radius:20px;margin-bottom:8px;
+  border:2px solid #ffd700;color:#ffd700;min-height:30px;text-align:center;min-width:400px}
+
+/* ── LAYOUT ─────────────────────────────────── */
 #game-wrapper{display:flex;gap:14px;align-items:flex-start}
 
-/* HUD */
-.hud-bar{width:560px;display:flex;align-items:center;padding:8px 14px;border-radius:8px;font-size:13px;gap:10px}
-#hud-red {background:rgba(160,30,30,.35);border:2px solid rgba(220,70,70,.55)}
-#hud-blue{background:rgba(30,60,160,.35);border:2px solid rgba(70,110,230,.55)}
-.hud-name{font-weight:bold;font-size:14px;min-width:72px}
+/* ── HUD ─────────────────────────────────────── */
+.hud-bar{width:566px;display:flex;align-items:center;padding:8px 14px;border-radius:8px;font-size:13px;gap:10px}
+#hud-red {background:rgba(140,20,20,.40);border:2px solid rgba(220,60,60,.6)}
+#hud-blue{background:rgba(20,50,150,.40);border:2px solid rgba(60,100,230,.6)}
+.hud-name{font-weight:bold;font-size:14px;min-width:80px}
 #hud-red  .hud-name{color:#ff8888}
 #hud-blue .hud-name{color:#88aaff}
 .hud-hp-wrap{flex:1;display:flex;flex-direction:column;gap:2px}
 .hud-hp-bar{height:14px;background:rgba(0,0,0,.45);border-radius:7px;overflow:hidden}
 .hud-hp-fill{height:100%;border-radius:7px;transition:width .35s,background .35s}
 .hud-hp-text{font-size:10px;color:#bbb;text-align:center}
-.hud-count{font-size:13px;font-weight:bold;min-width:48px;text-align:right}
+.hud-count{font-size:13px;font-weight:bold;min-width:52px;text-align:right}
 
-/* BOARD */
+/* ── BOARD CONTAINER ─────────────────────────── */
+#board-wrap{position:relative;display:inline-block}
+
+/* ── BOARD GRID ──────────────────────────────── */
 #board{display:grid;grid-template-columns:repeat(8,70px);grid-template-rows:repeat(8,70px);
-  border:3px solid #1a1a2a;border-radius:4px;box-shadow:0 6px 32px rgba(0,0,0,.75)}
+  border:3px solid #111;border-radius:4px;box-shadow:0 6px 32px rgba(0,0,0,.8)}
 .cell{width:70px;height:70px;position:relative;display:flex;align-items:center;justify-content:center}
-/* Neutral rows 3-4 */
-.cell.light{background:#d4c080}
-.cell.dark {background:#6e8850}
-/* Red zone rows 0-2: warm tones */
-.cell.zr.light{background:#f0c070}
-.cell.zr.dark {background:#aa3322}
-/* Blue zone rows 5-7: cool tones */
+
+/* Neutral fallback (unused with full-zone board) */
+.cell.light{background:#d4c080}.cell.dark{background:#6e8850}
+
+/* Red zone rows 0-3: warm tones */
+.cell.zr.light{background:#e8b870}
+.cell.zr.dark {background:#9a3322}
+/* Red base/wall row (row 0): fortress back */
+.cell.base-r.light{background:#b86030}
+.cell.base-r.dark {background:#581008}
+
+/* Blue zone rows 4-7: cool tones */
 .cell.zb.light{background:#88b8e0}
 .cell.zb.dark {background:#1e3a99}
-/* Centre divider */
-.cell.mid-top   {border-bottom:2px solid rgba(255,255,200,.22)}
-.cell.mid-bottom{border-top   :2px solid rgba(255,255,200,.22)}
+/* Blue base/wall row (row 7): fortress back */
+.cell.base-b.light{background:#3060b8}
+.cell.base-b.dark {background:#081058}
 
-/* PIECES */
+/* Centre battle line */
+.cell.ctr-top   {border-bottom:4px solid rgba(255,240,80,.45)!important}
+.cell.ctr-bottom{border-top   :4px solid rgba(255,240,80,.45)!important}
+
+/* ── PIECES ──────────────────────────────────── */
 .piece{width:64px;height:64px;border-radius:8px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:1px;border:2px solid transparent;position:relative}
 .piece.red-pc{background:linear-gradient(145deg,#aa2828,#dd4444);border-color:#ff9090;
   box-shadow:0 2px 8px rgba(200,40,40,.6)}
 .piece.blue-pc{background:linear-gradient(145deg,#1e3488,#3a5acc);border-color:#88aaff;
   box-shadow:0 2px 8px rgba(40,70,200,.6)}
-.piece.flash-atk{animation:fAtk .22s ease}
-.piece.flash-hit{animation:fHit .30s ease}
-@keyframes fAtk{0%{filter:brightness(1)}45%{filter:brightness(3.2) saturate(2.5)}100%{filter:brightness(1)}}
-@keyframes fHit{0%{filter:brightness(1)}40%{filter:brightness(2.2) saturate(.1) sepia(1)}100%{filter:brightness(1)}}
+/* Flash animations */
+.piece.flash-atk{animation:fAtk .25s ease}
+.piece.flash-hit{animation:fHit .35s ease}
+@keyframes fAtk{0%{filter:brightness(1)}40%{filter:brightness(3.5)saturate(2.5)}100%{filter:brightness(1)}}
+@keyframes fHit{0%{filter:brightness(1)}35%{filter:brightness(2.5)saturate(.1)sepia(1)}100%{filter:brightness(1)}}
+/* Piece appear during setup */
+@keyframes pieceIn{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:scale(1)}}
+.piece-enter{animation:pieceIn .22s ease-out both}
+
 .piece-icon{font-size:24px;line-height:1}
-.piece-lbl{font-size:7px;color:rgba(255,255,255,.9);max-width:62px;text-align:center;white-space:nowrap;overflow:hidden}
+.piece-lbl{font-size:7px;color:rgba(255,255,255,.9);max-width:62px;text-align:center;
+  white-space:nowrap;overflow:hidden}
 .hp-bar{width:56px;height:5px;background:rgba(0,0,0,.5);border-radius:3px;overflow:hidden;margin-top:2px}
 .hp-fill{height:100%;border-radius:3px;transition:width .25s}
 .status-dot{position:absolute;top:-5px;right:-5px;font-size:10px;background:rgba(0,0,0,.8);
   border-radius:3px;padding:1px 2px;line-height:1}
 
-/* RIGHT PANEL */
+/* ── SVG OVERLAY (attack trails + alliance lines) ── */
+#lines-svg{position:absolute;top:3px;left:3px;width:560px;height:560px;pointer-events:none;z-index:20;overflow:visible}
+
+/* ── CONTROLS ────────────────────────────────── */
+#controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;width:566px}
+.btn{padding:8px 18px;border:none;border-radius:7px;font-size:13px;font-weight:bold;cursor:pointer;transition:all .15s}
+#btn-start{background:#22aa44;color:#fff;font-size:15px;padding:10px 28px;display:none;
+  box-shadow:0 0 16px rgba(40,200,80,.4)}
+#btn-start:hover{background:#33cc55}
+#btn-reset{background:#444;color:#ddd}
+#btn-reset:hover{background:#555}
+#speed-label{font-size:12px;color:#888;margin-left:6px;display:none}
+.spd-btn{padding:5px 12px;border:none;border-radius:5px;font-size:12px;font-weight:bold;cursor:pointer;
+  background:#2a2a2a;color:#aaa;border:1px solid #333;transition:all .1s;display:none}
+.spd-btn.active{background:#ffd700;color:#000;border-color:#ffd700}
+#tick-count{font-size:11px;color:#555;margin-left:auto;display:none}
+
+/* ── RIGHT PANEL ─────────────────────────────── */
 #right-panel{width:230px;display:flex;flex-direction:column;gap:10px}
 .panel-box{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px}
 .panel-title{font-size:13px;font-weight:bold;color:#ffd700;margin-bottom:8px;text-align:center}
@@ -69,30 +106,18 @@ h1{font-size:26px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;text-shadow
 .leg-item{background:rgba(255,255,255,.05);border-radius:5px;padding:3px 2px;text-align:center;cursor:default;
   border:1px solid transparent;transition:border-color .1s}
 .leg-item:hover{border-color:#ffd700}
-.leg-icon{font-size:16px;line-height:1.3}
-.leg-name{font-size:7px;color:#999;line-height:1.2}
+.leg-icon{font-size:16px;line-height:1.3}.leg-name{font-size:7px;color:#999;line-height:1.2}
 #info-box{font-size:12px;min-height:80px}
 .info-row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .info-desc{font-size:11px;color:#999;margin-top:6px;line-height:1.45}
 .special-tag{display:inline-block;margin-top:5px;padding:1px 6px;background:rgba(255,200,0,.15);
   border:1px solid rgba(255,200,0,.35);border-radius:3px;font-size:10px;color:#ffd700}
-#log-box{max-height:200px;overflow-y:auto;font-size:11px;line-height:1.65;color:#888}
+#log-box{max-height:210px;overflow-y:auto;font-size:11px;line-height:1.65;color:#888}
 #log-box::-webkit-scrollbar{width:4px}
 #log-box::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
 .log-r{color:#ff9090}.log-b{color:#90aaff}.log-s{color:#ffd700}
 
-/* CONTROLS */
-#controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;width:560px}
-.btn{padding:8px 18px;border:none;border-radius:7px;font-size:13px;font-weight:bold;cursor:pointer;transition:all .15s}
-#btn-reset{background:#444;color:#ddd}
-#btn-reset:hover{background:#555}
-#speed-label{font-size:12px;color:#888;margin-left:8px}
-.spd-btn{padding:5px 12px;border:none;border-radius:5px;font-size:12px;font-weight:bold;cursor:pointer;
-  background:#2a2a2a;color:#aaa;border:1px solid #333;transition:all .1s}
-.spd-btn.active{background:#ffd700;color:#000;border-color:#ffd700}
-#tick-count{font-size:11px;color:#555;margin-left:auto}
-
-/* WIN OVERLAY */
+/* ── WIN OVERLAY ─────────────────────────────── */
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:99;
   align-items:center;justify-content:center;flex-direction:column;gap:18px}
 #overlay.show{display:flex}
@@ -104,12 +129,12 @@ h1{font-size:26px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;text-shadow
 <body>
 
 <h1>⚔️ REALM TACTICS ⚔️</h1>
-<div id="phase-banner">⚔️ Battle in Progress!</div>
+<div id="phase-banner">Initialising...</div>
 
 <div id="game-wrapper">
   <div id="board-area">
     <div class="hud-bar" id="hud-red">
-      <span class="hud-name">🔴 RED ARMY</span>
+      <span class="hud-name">🔴 RED BASE</span>
       <div class="hud-hp-wrap">
         <div class="hud-hp-bar"><div class="hud-hp-fill" id="hp-fill-red" style="width:100%;background:#44dd44"></div></div>
         <div class="hud-hp-text" id="hp-text-red">— HP</div>
@@ -117,10 +142,24 @@ h1{font-size:26px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;text-shadow
       <span class="hud-count" id="count-red">♟ —</span>
     </div>
 
-    <div id="board"></div>
+    <div id="board-wrap">
+      <div id="board"></div>
+      <svg id="lines-svg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="glow-r" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glow-b" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+      </svg>
+    </div>
 
     <div class="hud-bar" id="hud-blue">
-      <span class="hud-name">🔵 BLUE ARMY</span>
+      <span class="hud-name">🔵 BLUE BASE</span>
       <div class="hud-hp-wrap">
         <div class="hud-hp-bar"><div class="hud-hp-fill" id="hp-fill-blue" style="width:100%;background:#44dd44"></div></div>
         <div class="hud-hp-text" id="hp-text-blue">— HP</div>
@@ -129,11 +168,12 @@ h1{font-size:26px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;text-shadow
     </div>
 
     <div id="controls">
+      <button class="btn" id="btn-start" onclick="startBattle()">⚔️ Start Battle!</button>
       <button class="btn" id="btn-reset" onclick="resetGame()">🔄 New Battle</button>
       <span id="speed-label">Speed:</span>
-      <button class="spd-btn active" onclick="setSpeed(600,this)">1×</button>
-      <button class="spd-btn"        onclick="setSpeed(300,this)">2×</button>
-      <button class="spd-btn"        onclick="setSpeed(150,this)">4×</button>
+      <button class="spd-btn active" id="spd1" onclick="setSpeed(600,this)">1×</button>
+      <button class="spd-btn"        id="spd2" onclick="setSpeed(300,this)">2×</button>
+      <button class="spd-btn"        id="spd4" onclick="setSpeed(150,this)">4×</button>
       <span id="tick-count">Tick 0</span>
     </div>
   </div>
@@ -158,104 +198,174 @@ h1{font-size:26px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;text-shadow
   <div id="win-text">Winner!</div>
   <div id="win-sub"></div>
   <div id="win-stats"></div>
-  <button class="btn" style="background:#ffd700;color:#000;font-size:15px;padding:10px 30px" onclick="resetGame()">🔄 New Battle</button>
+  <button class="btn" style="background:#ffd700;color:#000;font-size:15px;padding:10px 30px"
+          onclick="resetGame()">🔄 New Battle</button>
 </div>
 
 <script>
+// ═══════════════════════════════════════════════════════
+//  PIECE DEFINITIONS
+// ═══════════════════════════════════════════════════════
 const PDEFS = {
-  footman:     {name:'Footman',       icon:'⚔️',  maxHp:50,  atk:12, range:1, spd:2, move:1, special:null,           desc:'Reliable melee fighter.'},
-  archer:      {name:'Archer',        icon:'🏹',  maxHp:30,  atk:14, range:3, spd:2, move:1, special:null,           desc:'Ranged. Attacks from up to 3 tiles away.'},
-  knight:      {name:'Knight',        icon:'🐴',  maxHp:70,  atk:20, range:1, spd:2, move:2, special:'fast',         desc:'Moves 2 tiles per tick.'},
-  mage:        {name:'Mage',          icon:'🔮',  maxHp:25,  atk:28, range:4, spd:3, move:1, special:'aoe',          desc:'Hits main target AND one nearby enemy per attack.'},
-  healer:      {name:'Healer',        icon:'💚',  maxHp:28,  atk:8,  range:2, spd:2, move:1, special:'heal',         desc:'Heals the lowest-HP ally (20 HP) instead of attacking.'},
-  shieldbearer:{name:'Shield Bearer', icon:'🛡️',  maxHp:100, atk:10, range:1, spd:3, move:1, special:'armor',        desc:'Takes only 50% damage from all sources.'},
-  ballista:    {name:'Ballista',      icon:'🎯',  maxHp:20,  atk:45, range:5, spd:4, move:0, special:'immobile',     desc:'Cannot move. Extreme range and power.'},
-  berserker:   {name:'Berserker',     icon:'🪓',  maxHp:55,  atk:22, range:1, spd:1, move:1, special:'double',       desc:'Attacks twice per turn.'},
-  monk:        {name:'Monk',          icon:'☯️',  maxHp:40,  atk:16, range:1, spd:2, move:1, special:'counter',      desc:'Reflects 40% of incoming damage back to attacker.'},
-  pyromancer:  {name:'Pyromancer',    icon:'🔥',  maxHp:28,  atk:18, range:3, spd:2, move:1, special:'burn',         desc:'Burns target: deals 3 damage/tick for 4 ticks.'},
-  golem:       {name:'Golem',         icon:'🗿',  maxHp:140, atk:15, range:1, spd:4, move:1, special:'rangedImmune', desc:'Immune to attacks from range > 1.'},
-  assassin:    {name:'Assassin',      icon:'🗡️',  maxHp:28,  atk:40, range:1, spd:2, move:1, special:'bypass',       desc:'Ignores target armor.'},
-  shaman:      {name:'Shaman',        icon:'🌿',  maxHp:35,  atk:13, range:3, spd:2, move:1, special:'poison',       desc:'Poisons target: 4 damage/tick for 4 ticks.'},
-  dragon:      {name:'Dragon',        icon:'🐉',  maxHp:90,  atk:30, range:2, spd:3, move:1, special:'cleave',       desc:'Hits ALL enemies within range simultaneously.'},
-  bard:        {name:'Bard',          icon:'🎵',  maxHp:22,  atk:10, range:2, spd:2, move:1, special:'buff',         desc:'Grants +10 attack to all adjacent allies.'},
-  warlord:     {name:'Warlord',       icon:'👑',  maxHp:65,  atk:22, range:1, spd:2, move:1, special:'warlord',      desc:'Passive: all your pieces gain +6 attack while alive.'},
+  footman:     {name:'Footman',       icon:'⚔️',  maxHp:50,  atk:12, range:1, spd:2, special:null,           desc:'Reliable melee fighter.'},
+  archer:      {name:'Archer',        icon:'🏹',  maxHp:30,  atk:14, range:3, spd:2, special:null,           desc:'Ranged. Attacks from up to 3 tiles away.'},
+  knight:      {name:'Knight',        icon:'🐴',  maxHp:70,  atk:20, range:1, spd:2, special:'fast',         desc:'Heavy cavalry — tough melee fighter.'},
+  mage:        {name:'Mage',          icon:'🔮',  maxHp:25,  atk:28, range:4, spd:3, special:'aoe',          desc:'Hits main target AND one nearby enemy.'},
+  healer:      {name:'Healer',        icon:'💚',  maxHp:28,  atk:8,  range:2, spd:2, special:'heal',         desc:'Heals the lowest-HP ally (20 HP) instead of attacking.'},
+  shieldbearer:{name:'Shield Bearer', icon:'🛡️',  maxHp:100, atk:10, range:1, spd:3, special:'armor',        desc:'Takes only 50% damage from all sources.'},
+  ballista:    {name:'Ballista',      icon:'🎯',  maxHp:20,  atk:45, range:5, spd:4, special:'immobile',     desc:'Stationary. Extreme range and power.'},
+  berserker:   {name:'Berserker',     icon:'🪓',  maxHp:55,  atk:22, range:1, spd:1, special:'double',       desc:'Attacks twice per turn.'},
+  monk:        {name:'Monk',          icon:'☯️',  maxHp:40,  atk:16, range:1, spd:2, special:'counter',      desc:'Reflects 40% of incoming damage back.'},
+  pyromancer:  {name:'Pyromancer',    icon:'🔥',  maxHp:28,  atk:18, range:3, spd:2, special:'burn',         desc:'Burns target: 3 dmg/tick for 4 ticks.'},
+  golem:       {name:'Golem',         icon:'🗿',  maxHp:140, atk:15, range:1, spd:4, special:'rangedImmune', desc:'Immune to attacks from range > 1.'},
+  assassin:    {name:'Assassin',      icon:'🗡️',  maxHp:28,  atk:40, range:1, spd:2, special:'bypass',       desc:'Ignores target armor.'},
+  shaman:      {name:'Shaman',        icon:'🌿',  maxHp:35,  atk:13, range:3, spd:2, special:'poison',       desc:'Poisons target: 4 dmg/tick for 4 ticks.'},
+  dragon:      {name:'Dragon',        icon:'🐉',  maxHp:90,  atk:30, range:2, spd:3, special:'cleave',       desc:'Hits ALL enemies in range simultaneously.'},
+  bard:        {name:'Bard',          icon:'🎵',  maxHp:22,  atk:10, range:2, spd:2, special:'buff',         desc:'+10 attack to all adjacent allies each tick.'},
+  warlord:     {name:'Warlord',       icon:'👑',  maxHp:65,  atk:22, range:1, spd:2, special:'warlord',      desc:'All your pieces gain +6 attack while alive.'},
 };
 
-const BSIZE          = 8;
+// ═══════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════
+const BSIZE           = 8;
+const CELL            = 70;       // cell pixel size
 const PIECES_PER_SIDE = 10;
-const RED_ROWS       = [0, 3];
-const BLUE_ROWS      = [5, 8];
-let TICK_MS          = 600;
-let G = {}, PID = 0, battleTimer = null, flashMap = {}, tickNum = 0;
+const RED_ROWS        = [0, 4];   // rows 0-3 inclusive
+const BLUE_ROWS       = [4, 8];   // rows 4-7 inclusive
+const RED_BACK        = 0;        // fortress wall row for red
+const BLUE_BACK       = 7;        // fortress wall row for blue
+const CTR_TOP         = 3;        // last red row (gets bottom border)
+const CTR_BOT         = 4;        // first blue row (gets top border)
+let TICK_MS           = 600;
+
+// ═══════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════
+let G = {}, PID = 0, battleTimer = null, setupTimer = null;
+let flashMap = {}, tickNum = 0;
 
 function mkPiece(type, owner) {
   const d = PDEFS[type];
   return { id:++PID, type, owner,
     hp:d.maxHp, maxHp:d.maxHp, atk:d.atk, atkBonus:0,
-    range:d.range, spd:d.spd, move:d.move, special:d.special,
+    range:d.range, spd:d.spd, special:d.special,
     cooldown:0, status:{burn:0,poison:0} };
 }
 
 function initGame() {
   if (battleTimer) { clearInterval(battleTimer); battleTimer = null; }
+  if (setupTimer)  { clearTimeout(setupTimer);   setupTimer  = null; }
   PID = 0; flashMap = {}; tickNum = 0;
-  G = { board: Array.from({length:BSIZE}, ()=>Array(BSIZE).fill(null)),
-        phase:'battle', maxHP:[0,0], kills:[0,0] };
+  G = {
+    board:  Array.from({length:BSIZE}, ()=>Array(BSIZE).fill(null)),
+    phase:  'setup',
+    maxHP:  [0, 0],
+    kills:  [0, 0],
+    trails: [],          // {fr,fc,tr,tc,owner,life,maxLife}
+  };
   clearLog();
   document.getElementById('overlay').classList.remove('show');
-  document.getElementById('tick-count').textContent = 'Tick 0';
-  autoSetup();
+  showControls('setup');
+  document.getElementById('phase-banner').textContent = '🤖 AI Building Base...';
+  render();
+  animateSetup();
+}
+
+// ═══════════════════════════════════════════════════════
+//  ANIMATED SETUP PHASE
+// ═══════════════════════════════════════════════════════
+function animateSetup() {
+  const types = Object.keys(PDEFS);
+  const picked = [];
+  const sh = shuffle([...types]);
+  for (let i = 0; i < PIECES_PER_SIDE; i++) picked.push(sh[i % sh.length]);
+
+  // Sort: melee (range=1) → front rows (rows 2-3), ranged → back rows (rows 0-1)
+  const frontCells = [], backCells = [];
+  for (let r = 0; r < 4; r++)
+    for (let c = 0; c < BSIZE; c++)
+      (r >= 2 ? frontCells : backCells).push({r, c});
+
+  const meleePicked  = picked.filter(t => PDEFS[t].range === 1);
+  const rangedPicked = picked.filter(t => PDEFS[t].range > 1);
+
+  const sfr = shuffle(frontCells);
+  const sbk = shuffle(backCells);
+  const placements = [];
+  meleePicked.forEach((t, i) => { if (i < sfr.length) placements.push({r:sfr[i].r, c:sfr[i].c, type:t}); });
+  rangedPicked.forEach((t, i) => { if (i < sbk.length) placements.push({r:sbk[i].r, c:sbk[i].c, type:t}); });
+  // Fill any gaps with leftover cells
+  const used = new Set(placements.map(p=>`${p.r},${p.c}`));
+  const allCells = shuffle([...frontCells, ...backCells]).filter(z=>!used.has(`${z.r},${z.c}`));
+  while (placements.length < PIECES_PER_SIDE && allCells.length) {
+    const z = allCells.shift();
+    placements.push({r:z.r, c:z.c, type:sh[placements.length % sh.length]});
+  }
+
+  let i = 0;
+  const newPieceIds = new Set();
+
+  function step() {
+    if (i >= placements.length) {
+      G.maxHP[0] = living(0).reduce((s,x)=>s+x.p.maxHp, 0);
+      G.maxHP[1] = living(1).reduce((s,x)=>s+x.p.maxHp, 0);
+      renderHUD();
+      document.getElementById('phase-banner').textContent = '✅ Bases Ready — Press Start Battle!';
+      showControls('ready');
+      logS('🏰 Both bases built! Click ⚔️ Start Battle!');
+      render();
+      return;
+    }
+    const {r, c, type} = placements[i];
+    // Red piece
+    G.board[r][c] = mkPiece(type, 0);
+    newPieceIds.add(G.board[r][c].id);
+    // Mirror for blue: row (BSIZE-1-r), same col
+    const mr = BSIZE - 1 - r;
+    if (!G.board[mr][c]) {
+      G.board[mr][c] = mkPiece(type, 1);
+      newPieceIds.add(G.board[mr][c].id);
+    }
+    document.getElementById('phase-banner').textContent =
+      `🤖 AI Building Base... ${i+1} / ${placements.length}`;
+    renderBoard(newPieceIds);
+    renderLines();
+    i++;
+    setupTimer = setTimeout(step, 165);
+  }
+  step();
+}
+
+// ═══════════════════════════════════════════════════════
+//  BATTLE
+// ═══════════════════════════════════════════════════════
+function startBattle() {
+  if (G.phase !== 'setup') return;
+  G.phase = 'battle';
+  showControls('battle');
   logS('⚔️ BATTLE BEGINS! ⚔️');
   render();
   battleTimer = setInterval(battleTick, TICK_MS);
 }
 
-function autoSetup() {
-  const types = Object.keys(PDEFS);
-  [0,1].forEach(owner => {
-    const [r0,r1] = owner===0 ? RED_ROWS : BLUE_ROWS;
-    const cells = [];
-    for (let r=r0; r<r1; r++)
-      for (let c=0; c<BSIZE; c++) cells.push({r,c});
-    const sc = shuffle(cells);
-    const st = shuffle([...types]);
-    const count = Math.min(PIECES_PER_SIDE, sc.length);
-    for (let i=0; i<count; i++) {
-      const {r,c} = sc[i];
-      G.board[r][c] = mkPiece(st[i % st.length], owner);
-    }
-    G.maxHP[owner] = living(owner).reduce((s,x)=>s+x.p.maxHp, 0);
-  });
-}
-
-/* ── Board utils ─────────────────────────────────── */
-function bget(r,c) { return (r>=0&&r<BSIZE&&c>=0&&c<BSIZE) ? G.board[r][c] : null; }
-function chebyshev(r1,c1,r2,c2) { return Math.max(Math.abs(r1-r2),Math.abs(c1-c2)); }
-function allPieces() {
-  const out=[];
-  for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++) if(G.board[r][c]) out.push({p:G.board[r][c],r,c});
-  return out;
-}
-function living(owner) { return allPieces().filter(x=>x.p.owner===owner&&x.p.hp>0); }
-function shuffle(arr) {
-  const a=[...arr];
-  for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}
-  return a;
-}
-
-/* ── Battle tick ─────────────────────────────────── */
 function battleTick() {
-  if (G.phase!=='battle') return;
+  if (G.phase !== 'battle') return;
   tickNum++;
-  document.getElementById('tick-count').textContent = 'Tick '+tickNum;
+  document.getElementById('tick-count').textContent = 'Tick ' + tickNum;
   flashMap = {};
 
+  // Decay trails
+  G.trails = G.trails.map(t=>({...t,life:t.life-1})).filter(t=>t.life>0);
+
+  // 1. Status damage
   allPieces().forEach(({p})=>{
     if(p.hp<=0) return;
     if(p.status.burn>0)   {p.hp=Math.max(0,p.hp-3);p.status.burn--;  flashMap[p.id]='hit';}
     if(p.status.poison>0) {p.hp=Math.max(0,p.hp-4);p.status.poison--;flashMap[p.id]='hit';}
   });
 
+  // 2. Passive bonuses
   allPieces().forEach(({p})=>{p.atkBonus=0;});
   allPieces().forEach(({p})=>{
     if(p.hp>0&&p.special==='warlord') living(p.owner).forEach(({p:a})=>{a.atkBonus+=6;});
@@ -270,65 +380,67 @@ function battleTick() {
     }
   });
 
+  // 3. Cooldowns tick down
   allPieces().forEach(({p})=>{if(p.cooldown>0)p.cooldown--;});
 
-  shuffle(allPieces().filter(x=>x.p.hp>0)).forEach(({p})=>{
+  // 4. Each piece fires — NO MOVEMENT
+  shuffle(allPieces().filter(x=>x.p.hp>0)).forEach(({p,r,c})=>{
     if(p.hp<=0) return;
-    const pos=findPos(p.id); if(!pos) return;
-    const {r:pr,c:pc}=pos;
+    if(p.special==='heal')   {actHealer(p,r,c);return;}
+    if(p.special==='cleave') {actCleave(p,r,c);return;}
 
-    if(p.special==='heal')   {actHealer(p,pr,pc);return;}
-    if(p.special==='cleave') {actCleave(p,pr,pc);return;}
-
-    const enemies=enemiesInRange(p,pr,pc);
+    const enemies=enemiesInRange(p,r,c);
     if(enemies.length>0&&p.cooldown<=0){
       const tgt=enemies[0];
-      doAttack(p,pr,pc,tgt.p,tgt.r,tgt.c);
+      doAttack(p,r,c,tgt.p,tgt.r,tgt.c);
       if(p.special==='double'&&p.hp>0){
         const t2=tgt.p.hp>0?tgt:(enemies[1]||null);
-        if(t2) doAttack(p,pr,pc,t2.p,t2.r,t2.c);
+        if(t2) doAttack(p,r,c,t2.p,t2.r,t2.c);
       }
       if(p.special==='aoe'&&enemies.length>1)
-        doAttack(p,pr,pc,enemies[1].p,enemies[1].r,enemies[1].c);
+        doAttack(p,r,c,enemies[1].p,enemies[1].r,enemies[1].c);
       p.cooldown=p.spd; flashMap[p.id]='atk';
-    } else if(p.move>0){
-      const near=nearestEnemy(p,pr,pc);
-      if(near) movePiece(p,pr,pc,near.r,near.c);
     }
+    // (no else-move — pieces are stationary)
   });
 
   allPieces().forEach(({p})=>{p.atkBonus=0;});
   removeDead();
 
   const rc=living(0).length, bc=living(1).length;
-  if(rc===0&&bc===0){endBattle('🤝 Draw!','Both armies fell simultaneously!');return;}
-  if(rc===0)        {endBattle('🔵 Blue Wins!','Red army wiped out!');        return;}
-  if(bc===0)        {endBattle('🔴 Red Wins!', 'Blue army wiped out!');       return;}
+  if(rc===0&&bc===0){endBattle('🤝 Draw!','Both bases fell simultaneously!');return;}
+  if(rc===0)        {endBattle('🔵 Blue Wins!','Red base wiped out!');        return;}
+  if(bc===0)        {endBattle('🔴 Red Wins!', 'Blue base wiped out!');       return;}
   render();
 }
 
-/* ── Combat ──────────────────────────────────────── */
+// ═══════════════════════════════════════════════════════
+//  COMBAT HELPERS
+// ═══════════════════════════════════════════════════════
 function doAttack(atk,ar,ac,tgt,tr,tc){
   if(!tgt||tgt.hp<=0) return;
   if(tgt.special==='rangedImmune'&&chebyshev(ar,ac,tr,tc)>1){
-    logR(atk,` → ${pn(tgt)} IMMUNE to ranged!`); return;
+    logR(atk,` -> ${pn(tgt)} IMMUNE to ranged!`); return;
   }
   let dmg=Math.max(1,atk.atk+atk.atkBonus);
   if(tgt.special==='armor'&&atk.special!=='bypass') dmg=Math.max(1,dmg>>1);
   tgt.hp=Math.max(0,tgt.hp-dmg);
   flashMap[tgt.id]='hit';
   logR(atk,` hits ${pn(tgt)} for ${dmg}`);
+  // Spawn attack trail
+  G.trails.push({fr:ar,fc:ac,tr,tc,owner:atk.owner,life:5,maxLife:5});
   if(tgt.special==='counter'&&tgt.hp>0&&atk.hp>0){
     const cd=Math.max(1,dmg*0.4|0);
-    atk.hp=Math.max(0,atk.hp-cd); flashMap[atk.id]='hit';
+    atk.hp=Math.max(0,atk.hp-cd);flashMap[atk.id]='hit';
     logS(`${pn(tgt)} counters ${pn(atk)} for ${cd}!`);
+    G.trails.push({fr:tr,fc:tc,tr:ar,tc:ac,owner:tgt.owner,life:4,maxLife:4});
   }
   if(atk.special==='burn'  &&tgt.hp>0&&tgt.status.burn  ===0){tgt.status.burn  =4;logS(`${pn(tgt)} is burning! 🔥`);}
   if(atk.special==='poison'&&tgt.hp>0&&tgt.status.poison===0){tgt.status.poison=4;logS(`${pn(tgt)} is poisoned! 🟢`);}
 }
 
 function actHealer(p,r,c){
-  if(p.cooldown>0){tryMove(p,r,c);return;}
+  if(p.cooldown>0) return;
   const inj=living(p.owner)
     .filter(x=>x.p.id!==p.id&&x.p.hp<x.p.maxHp&&chebyshev(r,c,x.r,x.c)<=p.range)
     .sort((a,b)=>a.p.hp-b.p.hp);
@@ -336,7 +448,8 @@ function actHealer(p,r,c){
     inj[0].p.hp=Math.min(inj[0].p.maxHp,inj[0].p.hp+20);
     logS(`💚 ${pn(p)} heals ${pn(inj[0].p)} for 20 HP!`);
     flashMap[inj[0].p.id]='atk'; p.cooldown=p.spd;
-  } else {tryMove(p,r,c);}
+    G.trails.push({fr:r,fc:c,tr:inj[0].r,tc:inj[0].c,owner:p.owner,life:4,maxLife:4});
+  }
 }
 
 function actCleave(p,r,c){
@@ -344,15 +457,25 @@ function actCleave(p,r,c){
   if(enemies.length>0&&p.cooldown<=0){
     enemies.forEach(e=>doAttack(p,r,c,e.p,e.r,e.c));
     p.cooldown=p.spd; flashMap[p.id]='atk';
-  } else if(!enemies.length) tryMove(p,r,c);
+  }
 }
 
-function tryMove(p,r,c){
-  if(!p.move) return;
-  const near=nearestEnemy(p,r,c);
-  if(near) movePiece(p,r,c,near.r,near.c);
+// ═══════════════════════════════════════════════════════
+//  BOARD UTILITIES
+// ═══════════════════════════════════════════════════════
+function bget(r,c){return(r>=0&&r<BSIZE&&c>=0&&c<BSIZE)?G.board[r][c]:null;}
+function chebyshev(r1,c1,r2,c2){return Math.max(Math.abs(r1-r2),Math.abs(c1-c2));}
+function allPieces(){
+  const out=[];
+  for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++) if(G.board[r][c]) out.push({p:G.board[r][c],r,c});
+  return out;
 }
-
+function living(owner){return allPieces().filter(x=>x.p.owner===owner&&x.p.hp>0);}
+function shuffle(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
 function enemiesInRange(piece,r,c){
   return allPieces()
     .filter(x=>x.p.owner!==piece.owner&&x.p.hp>0&&chebyshev(r,c,x.r,x.c)<=piece.range)
@@ -361,51 +484,19 @@ function enemiesInRange(piece,r,c){
       return da!==db?da-db:a.p.hp-b.p.hp;
     });
 }
-
-function nearestEnemy(piece,r,c){
-  const list=allPieces()
-    .filter(x=>x.p.owner!==piece.owner&&x.p.hp>0)
-    .sort((a,b)=>chebyshev(r,c,a.r,a.c)-chebyshev(r,c,b.r,b.c));
-  return list[0]||null;
-}
-
 function findPos(id){
   for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++)
     if(G.board[r][c]&&G.board[r][c].id===id) return {r,c};
   return null;
 }
-
-function movePiece(p,r,c,tr,tc){
-  let cr=r,cc=c;
-  for(let i=0;i<p.move;i++){
-    const dr=Math.sign(tr-cr),dc=Math.sign(tc-cc);
-    if(!dr&&!dc) break;
-    const dirs=[];
-    if(dr&&dc) dirs.push([dr,dc]);
-    if(dr) dirs.push([dr,0]);
-    if(dc) dirs.push([0,dc]);
-    if(dr) dirs.push([0,dc?-dc:1],[0,dc?-dc:-1]);
-    if(dc) dirs.push([dr?-dr:1,0],[dr?-dr:-1,0]);
-    let ok=false;
-    for(const [nr,nc] of dirs){
-      const r2=cr+nr,c2=cc+nc;
-      if(r2>=0&&r2<BSIZE&&c2>=0&&c2<BSIZE&&!G.board[r2][c2]){cr=r2;cc=c2;ok=true;break;}
-    }
-    if(!ok) break;
-  }
-  if(cr===r&&cc===c) return;
-  G.board[cr][cc]=p; G.board[r][c]=null;
-}
-
 function removeDead(){
   for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++){
     const p=G.board[r][c];
     if(p&&p.hp<=0){logS(`💀 ${pn(p)} falls!`);G.kills[p.owner===0?1:0]++;G.board[r][c]=null;}
   }
 }
-
 function endBattle(winText,subText){
-  clearInterval(battleTimer); battleTimer=null;
+  clearInterval(battleTimer);battleTimer=null;
   G.phase='gameover'; render();
   setTimeout(()=>{
     document.getElementById('win-text').textContent=winText;
@@ -415,7 +506,6 @@ function endBattle(winText,subText){
     document.getElementById('overlay').classList.add('show');
   },500);
 }
-
 function setSpeed(ms,btn){
   TICK_MS=ms;
   if(battleTimer){clearInterval(battleTimer);battleTimer=setInterval(battleTick,TICK_MS);}
@@ -423,11 +513,29 @@ function setSpeed(ms,btn){
   btn.classList.add('active');
 }
 
-/* ── Rendering ───────────────────────────────────── */
-function render(){
-  document.getElementById('phase-banner').textContent =
-    G.phase==='gameover'?'🏆 Game Over':'⚔️ Battle in Progress!';
-  renderHUD(); renderBoard();
+// ═══════════════════════════════════════════════════════
+//  SHOW/HIDE CONTROLS BY PHASE
+// ═══════════════════════════════════════════════════════
+function showControls(phase){
+  const show = (id, v) => { const e=document.getElementById(id); if(e) e.style.display=v?'':'none'; };
+  show('btn-start',  phase==='ready');
+  show('speed-label',phase==='battle');
+  show('spd1',       phase==='battle');
+  show('spd2',       phase==='battle');
+  show('spd4',       phase==='battle');
+  show('tick-count', phase==='battle');
+}
+
+// ═══════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════
+function render(newIds){
+  const banner=document.getElementById('phase-banner');
+  if(G.phase==='battle')   banner.textContent='⚔️ Battle in Progress!';
+  if(G.phase==='gameover') banner.textContent='🏆 Game Over';
+  renderHUD();
+  renderBoard(newIds);
+  renderLines();
 }
 
 function renderHUD(){
@@ -444,7 +552,7 @@ function renderHUD(){
   });
 }
 
-function renderBoard(){
+function renderBoard(newPieceIds){
   const boardEl=document.getElementById('board');
   boardEl.innerHTML='';
   for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++){
@@ -452,14 +560,17 @@ function renderBoard(){
     const dark=(r+c)%2===1;
     const inRed =r>=RED_ROWS[0] &&r<RED_ROWS[1];
     const inBlue=r>=BLUE_ROWS[0]&&r<BLUE_ROWS[1];
+    const isBaseR=(r===RED_BACK);
+    const isBaseB=(r===BLUE_BACK);
     div.className='cell '+(dark?'dark':'light')
-      +(inRed?' zr':'')+(inBlue?' zb':'')
-      +(r===RED_ROWS[1]-1?' mid-top':'')
-      +(r===BLUE_ROWS[0]?' mid-bottom':'');
+      +(inRed ?' zr':'')+(inBlue?' zb':'')
+      +(isBaseR?' base-r':'')+(isBaseB?' base-b':'')
+      +(r===CTR_TOP?' ctr-top':'')+(r===CTR_BOT?' ctr-bottom':'');
     const p=G.board[r][c];
     if(p){
       const pel=document.createElement('div');
-      pel.className='piece '+(p.owner===0?'red-pc':'blue-pc');
+      const isNew=newPieceIds&&newPieceIds.has(p.id);
+      pel.className='piece '+(p.owner===0?'red-pc':'blue-pc')+(isNew?' piece-enter':'');
       if(flashMap[p.id]==='atk') pel.classList.add('flash-atk');
       if(flashMap[p.id]==='hit') pel.classList.add('flash-hit');
       const def=PDEFS[p.type];
@@ -479,21 +590,69 @@ function renderBoard(){
   }
 }
 
+// ─── SVG: alliance connection lines + attack trails ────
+function renderLines(){
+  const svg=document.getElementById('lines-svg');
+  // Clear everything except <defs>
+  while(svg.lastChild && svg.lastChild.tagName!=='defs') svg.removeChild(svg.lastChild);
+
+  const cx=c=>c*CELL+CELL/2;
+  const cy=r=>r*CELL+CELL/2;
+
+  // Alliance connection lines (adjacent same-team pieces)
+  const pieces=allPieces();
+  for(let i=0;i<pieces.length;i++){
+    for(let j=i+1;j<pieces.length;j++){
+      const a=pieces[i],b=pieces[j];
+      if(a.p.owner===b.p.owner && chebyshev(a.r,a.c,b.r,b.c)===1){
+        const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+        ln.setAttribute('x1',cx(a.c)); ln.setAttribute('y1',cy(a.r));
+        ln.setAttribute('x2',cx(b.c)); ln.setAttribute('y2',cy(b.r));
+        const col=a.p.owner===0?'rgba(255,140,100,0.35)':'rgba(100,160,255,0.35)';
+        ln.setAttribute('stroke',col);
+        ln.setAttribute('stroke-width','1.8');
+        ln.setAttribute('stroke-dasharray','4 3');
+        svg.appendChild(ln);
+      }
+    }
+  }
+
+  // Attack trails
+  G.trails.forEach(t=>{
+    const frac=t.life/t.maxLife;
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',cx(t.fc)); line.setAttribute('y1',cy(t.fr));
+    line.setAttribute('x2',cx(t.tc)); line.setAttribute('y2',cy(t.tr));
+    const r=t.owner===0?'255,100,50':'80,160,255';
+    line.setAttribute('stroke',`rgba(${r},${frac})`);
+    line.setAttribute('stroke-width', 2+frac*3);
+    line.setAttribute('stroke-linecap','round');
+    line.setAttribute('filter',t.owner===0?'url(#glow-r)':'url(#glow-b)');
+    svg.appendChild(line);
+
+    // Arrowhead / impact dot at target
+    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx',cx(t.tc)); dot.setAttribute('cy',cy(t.tr));
+    dot.setAttribute('r', 4+frac*4);
+    dot.setAttribute('fill',`rgba(${r},${frac*0.7})`);
+    svg.appendChild(dot);
+  });
+}
+
+// ─── Info panel ────────────────────────────────────────
 function showInfo(type,p){
   const def=PDEFS[type];
   const box=document.getElementById('info-box');
   const hp=p?`${p.hp}/${p.maxHp}`:`${def.maxHp}`;
   const tag=def.special?`<div class="special-tag">✨ ${def.special}</div>`:'';
   box.innerHTML=
-    `<div class="info-row"><span>${def.icon} <b>${def.name}</b></span><span>${p?(p.owner===0?'🔴':'🔵'):''}</span></div>`
+    `<div class="info-row"><span>${def.icon} <b>${def.name}</b></span><span>${p?(p.owner===0?'🔴':'��'):''}</span></div>`
    +`<div class="info-row"><span>HP</span><span>${hp}</span></div>`
    +`<div class="info-row"><span>Attack</span><span>${def.atk}</span></div>`
    +`<div class="info-row"><span>Range</span><span>${def.range} tile${def.range>1?'s':''}</span></div>`
-   +`<div class="info-row"><span>Move</span><span>${def.move}/tick</span></div>`
    +`<div class="info-row"><span>Atk CD</span><span>${def.spd} tick${def.spd>1?'s':''}</span></div>`
    +tag+`<p class="info-desc">${def.desc}</p>`;
 }
-
 function renderLegend(){
   const grid=document.getElementById('legend-grid');
   Object.entries(PDEFS).forEach(([k,def])=>{
@@ -506,6 +665,7 @@ function renderLegend(){
   });
 }
 
+// ─── Log ───────────────────────────────────────────────
 function pn(p){return p?PDEFS[p.type].icon+'['+(p.owner===0?'R':'B')+']':'?';}
 function logR(atk,msg){appendLog(pn(atk)+msg,atk.owner===0?'log-r':'log-b');}
 function logS(msg){appendLog(msg,'log-s');}
