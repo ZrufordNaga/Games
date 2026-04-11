@@ -5,431 +5,263 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>⚔️ Realm Tactics</title>
 <style>
-/* ── RESET & BASE ─────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0}
-body{
-  background:#0d1117;color:#e0e0e0;
-  font-family:'Segoe UI',Tahoma,sans-serif;
-  min-height:100vh;display:flex;flex-direction:column;
-  align-items:center;padding:10px;user-select:none;
-}
-h1{
-  font-size:28px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;
-  text-shadow:0 0 20px rgba(255,215,0,.4);
-}
-/* ── PHASE BANNER ──────────────────────────────────────── */
-#phase-banner{
-  font-size:15px;font-weight:bold;padding:5px 26px;
-  border-radius:20px;margin-bottom:10px;
-  border:2px solid #555;transition:color .3s,border-color .3s;
-}
-/* ── LAYOUT ────────────────────────────────────────────── */
-#game-wrapper{display:flex;gap:12px;align-items:flex-start}
-/* ── HUD BARS ──────────────────────────────────────────── */
-.hud-bar{
-  width:528px;display:flex;justify-content:space-between;
-  align-items:center;padding:6px 14px;border-radius:8px;
-  font-size:14px;gap:10px;transition:box-shadow .3s;
-}
-#hud-red {background:rgba(180,40,40,.2);border:1px solid rgba(220,80,80,.5)}
-#hud-blue{background:rgba(40,80,180,.2);border:1px solid rgba(80,120,220,.5)}
-.hud-name{font-weight:bold}
-#hud-red  .hud-name{color:#ff7070}
-#hud-blue .hud-name{color:#7099ff}
-.hud-gold{color:#ffd700}
-.hud-count{color:#aaa;font-size:12px}
-.hud-active{box-shadow:0 0 12px rgba(255,215,0,.5)!important}
-/* ── BOARD ─────────────────────────────────────────────── */
-#board{
-  display:grid;
-  grid-template-columns:repeat(8,66px);
-  grid-template-rows:repeat(8,66px);
-  border:3px solid #2a2a2a;border-radius:3px;
-  box-shadow:0 6px 30px rgba(0,0,0,.7);
-}
-.cell{
-  width:66px;height:66px;position:relative;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transition:background-color .12s;
-}
-.cell.light{background:#d9c89a}
-.cell.dark {background:#7a9660}
-/* zone tint during setup */
-.cell.zone-red {background:rgba(200,60,60,.28)!important}
-.cell.zone-blue{background:rgba(60,100,220,.28)!important}
-/* placement highlight */
-.cell.hlt-place{
-  background:rgba(60,220,60,.55)!important;
-  outline:2px solid #44dd44;outline-offset:-2px;
-}
-/* row divider lines */
-.cell.row-3-bottom{border-bottom:2px dashed rgba(255,255,255,.15)}
-.cell.row-4-top   {border-top   :2px dashed rgba(255,255,255,.15)}
-/* ── PIECES ────────────────────────────────────────────── */
-.piece{
-  width:60px;height:60px;border-radius:7px;
-  display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:1px;
-  border:2px solid transparent;cursor:pointer;position:relative;
-  transition:transform .15s,box-shadow .15s;
-}
-.piece:hover{transform:scale(1.07)}
-.piece.red-pc{
-  background:linear-gradient(145deg,#b83030,#dd5555);
-  border-color:#ff9090;box-shadow:0 2px 6px rgba(200,50,50,.5);
-}
-.piece.blue-pc{
-  background:linear-gradient(145deg,#2244aa,#4466cc);
-  border-color:#90aaff;box-shadow:0 2px 6px rgba(50,80,200,.5);
-}
+body{background:#0d1117;color:#e0e0e0;font-family:'Segoe UI',Tahoma,sans-serif;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:10px 6px;user-select:none}
+h1{font-size:26px;color:#ffd700;letter-spacing:3px;margin-bottom:6px;text-shadow:0 0 20px rgba(255,215,0,.4)}
+#phase-banner{font-size:14px;font-weight:bold;padding:4px 22px;border-radius:20px;margin-bottom:8px;
+  border:2px solid #ffd700;color:#ffd700;min-height:28px;text-align:center}
+#game-wrapper{display:flex;gap:14px;align-items:flex-start}
+
+/* HUD */
+.hud-bar{width:560px;display:flex;align-items:center;padding:8px 14px;border-radius:8px;font-size:13px;gap:10px}
+#hud-red {background:rgba(160,30,30,.35);border:2px solid rgba(220,70,70,.55)}
+#hud-blue{background:rgba(30,60,160,.35);border:2px solid rgba(70,110,230,.55)}
+.hud-name{font-weight:bold;font-size:14px;min-width:72px}
+#hud-red  .hud-name{color:#ff8888}
+#hud-blue .hud-name{color:#88aaff}
+.hud-hp-wrap{flex:1;display:flex;flex-direction:column;gap:2px}
+.hud-hp-bar{height:14px;background:rgba(0,0,0,.45);border-radius:7px;overflow:hidden}
+.hud-hp-fill{height:100%;border-radius:7px;transition:width .35s,background .35s}
+.hud-hp-text{font-size:10px;color:#bbb;text-align:center}
+.hud-count{font-size:13px;font-weight:bold;min-width:48px;text-align:right}
+
+/* BOARD */
+#board{display:grid;grid-template-columns:repeat(8,70px);grid-template-rows:repeat(8,70px);
+  border:3px solid #1a1a2a;border-radius:4px;box-shadow:0 6px 32px rgba(0,0,0,.75)}
+.cell{width:70px;height:70px;position:relative;display:flex;align-items:center;justify-content:center}
+/* Neutral rows 3-4 */
+.cell.light{background:#d4c080}
+.cell.dark {background:#6e8850}
+/* Red zone rows 0-2: warm tones */
+.cell.zr.light{background:#f0c070}
+.cell.zr.dark {background:#aa3322}
+/* Blue zone rows 5-7: cool tones */
+.cell.zb.light{background:#88b8e0}
+.cell.zb.dark {background:#1e3a99}
+/* Centre divider */
+.cell.mid-top   {border-bottom:2px solid rgba(255,255,200,.22)}
+.cell.mid-bottom{border-top   :2px solid rgba(255,255,200,.22)}
+
+/* PIECES */
+.piece{width:64px;height:64px;border-radius:8px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px;border:2px solid transparent;position:relative}
+.piece.red-pc{background:linear-gradient(145deg,#aa2828,#dd4444);border-color:#ff9090;
+  box-shadow:0 2px 8px rgba(200,40,40,.6)}
+.piece.blue-pc{background:linear-gradient(145deg,#1e3488,#3a5acc);border-color:#88aaff;
+  box-shadow:0 2px 8px rgba(40,70,200,.6)}
 .piece.flash-atk{animation:fAtk .22s ease}
-.piece.flash-hit{animation:fHit .28s ease}
-@keyframes fAtk{0%{filter:brightness(1)}50%{filter:brightness(2.8) saturate(2)}100%{filter:brightness(1)}}
-@keyframes fHit{0%{filter:brightness(1)}40%{filter:brightness(2) saturate(.15) sepia(.8)}100%{filter:brightness(1)}}
-.piece-icon{font-size:22px;line-height:1}
-.piece-lbl {font-size:7px;color:rgba(255,255,255,.85);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden}
-.hp-bar    {width:52px;height:4px;background:rgba(0,0,0,.45);border-radius:2px;overflow:hidden;margin-top:1px}
-.hp-fill   {height:100%;border-radius:2px;background:#44dd44;transition:width .28s}
-.status-dot{
-  position:absolute;top:-4px;right:-4px;font-size:9px;
-  background:rgba(0,0,0,.75);border-radius:3px;padding:1px 2px;line-height:1;
-}
-/* ── RIGHT PANEL ───────────────────────────────────────── */
-#right-panel{width:244px;display:flex;flex-direction:column;gap:10px}
-.panel-box{
-  background:rgba(255,255,255,.04);
-  border:1px solid rgba(255,255,255,.1);
-  border-radius:8px;padding:10px;
-}
-.panel-title{
-  font-size:13px;font-weight:bold;color:#ffd700;
-  margin-bottom:8px;text-align:center;
-}
-/* ── SHOP ──────────────────────────────────────────────── */
-#shop-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
-.shop-item{
-  background:rgba(255,255,255,.06);border:2px solid transparent;
-  border-radius:6px;padding:4px 2px;text-align:center;
-  cursor:pointer;transition:all .12s;
-}
-.shop-item:hover:not(.unafford){
-  background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.28);
-}
-.shop-item.sel-shop{border-color:#ffd700;background:rgba(255,215,0,.18)}
-.shop-item.unafford{opacity:.32;cursor:default}
-.si-icon{font-size:18px;line-height:1.2}
-.si-cost{font-size:10px;color:#ffd700;font-weight:bold}
-/* ── INFO BOX ──────────────────────────────────────────── */
-#info-box{font-size:12px}
-.info-row{
-  display:flex;justify-content:space-between;padding:2px 0;
-  border-bottom:1px solid rgba(255,255,255,.06);
-}
+.piece.flash-hit{animation:fHit .30s ease}
+@keyframes fAtk{0%{filter:brightness(1)}45%{filter:brightness(3.2) saturate(2.5)}100%{filter:brightness(1)}}
+@keyframes fHit{0%{filter:brightness(1)}40%{filter:brightness(2.2) saturate(.1) sepia(1)}100%{filter:brightness(1)}}
+.piece-icon{font-size:24px;line-height:1}
+.piece-lbl{font-size:7px;color:rgba(255,255,255,.9);max-width:62px;text-align:center;white-space:nowrap;overflow:hidden}
+.hp-bar{width:56px;height:5px;background:rgba(0,0,0,.5);border-radius:3px;overflow:hidden;margin-top:2px}
+.hp-fill{height:100%;border-radius:3px;transition:width .25s}
+.status-dot{position:absolute;top:-5px;right:-5px;font-size:10px;background:rgba(0,0,0,.8);
+  border-radius:3px;padding:1px 2px;line-height:1}
+
+/* RIGHT PANEL */
+#right-panel{width:230px;display:flex;flex-direction:column;gap:10px}
+.panel-box{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px}
+.panel-title{font-size:13px;font-weight:bold;color:#ffd700;margin-bottom:8px;text-align:center}
+#legend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.leg-item{background:rgba(255,255,255,.05);border-radius:5px;padding:3px 2px;text-align:center;cursor:default;
+  border:1px solid transparent;transition:border-color .1s}
+.leg-item:hover{border-color:#ffd700}
+.leg-icon{font-size:16px;line-height:1.3}
+.leg-name{font-size:7px;color:#999;line-height:1.2}
+#info-box{font-size:12px;min-height:80px}
+.info-row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .info-desc{font-size:11px;color:#999;margin-top:6px;line-height:1.45}
-.special-tag{
-  display:inline-block;margin-top:5px;padding:1px 6px;
-  background:rgba(255,200,0,.15);border:1px solid rgba(255,200,0,.35);
-  border-radius:3px;font-size:10px;color:#ffd700;
-}
-/* ── LOG ───────────────────────────────────────────────── */
-#log-box{max-height:170px;overflow-y:auto;font-size:11px;line-height:1.6;color:#888}
+.special-tag{display:inline-block;margin-top:5px;padding:1px 6px;background:rgba(255,200,0,.15);
+  border:1px solid rgba(255,200,0,.35);border-radius:3px;font-size:10px;color:#ffd700}
+#log-box{max-height:200px;overflow-y:auto;font-size:11px;line-height:1.65;color:#888}
 #log-box::-webkit-scrollbar{width:4px}
 #log-box::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
 .log-r{color:#ff9090}.log-b{color:#90aaff}.log-s{color:#ffd700}
-/* ── CONTROLS ──────────────────────────────────────────── */
-#controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
-.btn{
-  padding:9px 20px;border:none;border-radius:7px;
-  font-size:14px;font-weight:bold;cursor:pointer;transition:all .15s;
-}
-#btn-done {background:#4488ff;color:#fff}
-#btn-done:hover{background:#55aaff}
-#btn-start{background:#cc2222;color:#fff;display:none}
-#btn-start:hover{background:#ee4444}
-#btn-reset{background:#333;color:#ccc}
-#btn-reset:hover{background:#444}
-#ctrl-msg{font-size:12px;color:#aaa;max-width:260px}
-/* ── WIN OVERLAY ───────────────────────────────────────── */
-#overlay{
-  display:none;position:fixed;inset:0;
-  background:rgba(0,0,0,.84);z-index:99;
-  align-items:center;justify-content:center;
-  flex-direction:column;gap:18px;
-}
+
+/* CONTROLS */
+#controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;width:560px}
+.btn{padding:8px 18px;border:none;border-radius:7px;font-size:13px;font-weight:bold;cursor:pointer;transition:all .15s}
+#btn-reset{background:#444;color:#ddd}
+#btn-reset:hover{background:#555}
+#speed-label{font-size:12px;color:#888;margin-left:8px}
+.spd-btn{padding:5px 12px;border:none;border-radius:5px;font-size:12px;font-weight:bold;cursor:pointer;
+  background:#2a2a2a;color:#aaa;border:1px solid #333;transition:all .1s}
+.spd-btn.active{background:#ffd700;color:#000;border-color:#ffd700}
+#tick-count{font-size:11px;color:#555;margin-left:auto}
+
+/* WIN OVERLAY */
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:99;
+  align-items:center;justify-content:center;flex-direction:column;gap:18px}
 #overlay.show{display:flex}
-#win-text{font-size:44px;color:#ffd700;text-shadow:0 0 30px #ffd700}
-#win-sub {font-size:18px;color:#eee}
-/* ── SPEED CONTROLS ────────────────────────────────────── */
-#speed-row{display:flex;gap:6px;align-items:center;font-size:12px;color:#aaa;margin-top:4px}
-.spd-btn{
-  padding:4px 10px;border:none;border-radius:5px;
-  font-size:12px;cursor:pointer;background:#333;color:#ccc;
-  transition:background .1s;
-}
-.spd-btn.active{background:#ffd700;color:#000;font-weight:bold}
+#win-text{font-size:52px;color:#ffd700;text-shadow:0 0 40px #ffd700}
+#win-sub{font-size:18px;color:#eee}
+#win-stats{font-size:14px;color:#aaa;text-align:center;line-height:1.8}
 </style>
 </head>
 <body>
 
 <h1>⚔️ REALM TACTICS ⚔️</h1>
-<div id="phase-banner">🔴 Red Player — Place Your Army</div>
+<div id="phase-banner">⚔️ Battle in Progress!</div>
 
 <div id="game-wrapper">
-
-  <!-- BOARD AREA -->
   <div id="board-area">
-    <div class="hud-bar hud-active" id="hud-red">
-      <span class="hud-name">🔴 RED PLAYER</span>
-      <span class="hud-gold" id="gold-red">💰 30 / 30</span>
-      <span class="hud-count" id="count-red">Pieces: 0</span>
+    <div class="hud-bar" id="hud-red">
+      <span class="hud-name">🔴 RED ARMY</span>
+      <div class="hud-hp-wrap">
+        <div class="hud-hp-bar"><div class="hud-hp-fill" id="hp-fill-red" style="width:100%;background:#44dd44"></div></div>
+        <div class="hud-hp-text" id="hp-text-red">— HP</div>
+      </div>
+      <span class="hud-count" id="count-red">♟ —</span>
     </div>
 
     <div id="board"></div>
 
     <div class="hud-bar" id="hud-blue">
-      <span class="hud-name">🔵 BLUE PLAYER</span>
-      <span class="hud-gold" id="gold-blue">💰 30 / 30</span>
-      <span class="hud-count" id="count-blue">Pieces: 0</span>
+      <span class="hud-name">🔵 BLUE ARMY</span>
+      <div class="hud-hp-wrap">
+        <div class="hud-hp-bar"><div class="hud-hp-fill" id="hp-fill-blue" style="width:100%;background:#44dd44"></div></div>
+        <div class="hud-hp-text" id="hp-text-blue">— HP</div>
+      </div>
+      <span class="hud-count" id="count-blue">♟ —</span>
     </div>
 
     <div id="controls">
-      <button class="btn" id="btn-done"  onclick="doneSetup()">✅ Done Placing</button>
-      <button class="btn" id="btn-start" onclick="startBattle()">⚔️ Start Battle!</button>
-      <button class="btn" id="btn-reset" onclick="resetGame()">🔄 Reset</button>
-      <div id="ctrl-msg">Select a piece from the shop, then click your zone.</div>
-    </div>
-
-    <div id="speed-row" style="display:none">
-      Speed:
+      <button class="btn" id="btn-reset" onclick="resetGame()">🔄 New Battle</button>
+      <span id="speed-label">Speed:</span>
       <button class="spd-btn active" onclick="setSpeed(600,this)">1×</button>
       <button class="spd-btn"        onclick="setSpeed(300,this)">2×</button>
       <button class="spd-btn"        onclick="setSpeed(150,this)">4×</button>
+      <span id="tick-count">Tick 0</span>
     </div>
   </div>
 
-  <!-- RIGHT PANEL -->
   <div id="right-panel">
     <div class="panel-box">
-      <div class="panel-title" id="shop-title">🛒 Red Shop</div>
-      <div style="text-align:center;font-size:11px;color:#888;margin-bottom:6px">
-        Hover items for stats • Click own pieces to refund
-      </div>
-      <div id="shop-grid"></div>
-    </div>
-
-    <div class="panel-box">
       <div class="panel-title">📋 Piece Info</div>
-      <div id="info-box"><p style="color:#555;font-size:11px">Hover a shop item or piece</p></div>
+      <div id="info-box"><p style="color:#555;font-size:11px;text-align:center;padding-top:10px">Hover a piece</p></div>
     </div>
-
+    <div class="panel-box">
+      <div class="panel-title">📖 Piece Legend</div>
+      <div id="legend-grid"></div>
+    </div>
     <div class="panel-box">
       <div class="panel-title">📜 Battle Log</div>
       <div id="log-box"></div>
     </div>
   </div>
-
 </div>
 
-<!-- WIN OVERLAY -->
 <div id="overlay">
   <div id="win-text">Winner!</div>
   <div id="win-sub"></div>
-  <button class="btn" style="background:#ffd700;color:#000;font-size:16px;padding:12px 32px" onclick="resetGame()">
-    🔄 Play Again
-  </button>
+  <div id="win-stats"></div>
+  <button class="btn" style="background:#ffd700;color:#000;font-size:15px;padding:10px 30px" onclick="resetGame()">🔄 New Battle</button>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-//  PIECE DEFINITIONS  (16 unique pieces)
-// ═══════════════════════════════════════════════════════
 const PDEFS = {
-  footman:     {name:'Footman',       icon:'⚔️',  cost:2, maxHp:50,  atk:12, range:1, spd:2, move:1, special:null,           desc:'Reliable melee fighter.'},
-  archer:      {name:'Archer',        icon:'🏹',  cost:3, maxHp:30,  atk:14, range:3, spd:2, move:1, special:null,           desc:'Ranged. Attacks from up to 3 tiles away.'},
-  knight:      {name:'Knight',        icon:'🐴',  cost:5, maxHp:70,  atk:20, range:1, spd:2, move:2, special:'fast',         desc:'Moves 2 tiles per tick. Heavy cavalry.'},
-  mage:        {name:'Mage',          icon:'🔮',  cost:5, maxHp:25,  atk:28, range:4, spd:3, move:1, special:'aoe',          desc:'Hits main target AND one nearby enemy per attack.'},
-  healer:      {name:'Healer',        icon:'💚',  cost:3, maxHp:28,  atk:8,  range:2, spd:2, move:1, special:'heal',         desc:'Heals the lowest-HP ally (20 HP) instead of attacking.'},
-  shieldbearer:{name:'Shield Bearer', icon:'🛡️',  cost:4, maxHp:100, atk:10, range:1, spd:3, move:1, special:'armor',        desc:'Takes only 50% damage from all sources.'},
-  ballista:    {name:'Ballista',      icon:'🎯',  cost:6, maxHp:20,  atk:45, range:5, spd:4, move:0, special:'immobile',     desc:'Cannot move. Extreme range and power.'},
-  berserker:   {name:'Berserker',     icon:'🪓',  cost:4, maxHp:55,  atk:22, range:1, spd:1, move:1, special:'double',       desc:'Attacks twice per turn. Very fast swing speed.'},
-  monk:        {name:'Monk',          icon:'☯️',  cost:3, maxHp:40,  atk:16, range:1, spd:2, move:1, special:'counter',      desc:'Reflects 40% of incoming damage back to attacker.'},
-  pyromancer:  {name:'Pyromancer',    icon:'🔥',  cost:5, maxHp:28,  atk:18, range:3, spd:2, move:1, special:'burn',         desc:'Burns target: deals 3 damage/tick for 4 ticks.'},
-  golem:       {name:'Golem',         icon:'🗿',  cost:7, maxHp:140, atk:15, range:1, spd:4, move:1, special:'rangedImmune', desc:'Completely immune to attacks from range > 1.'},
-  assassin:    {name:'Assassin',      icon:'🗡️',  cost:4, maxHp:28,  atk:40, range:1, spd:2, move:1, special:'bypass',       desc:'Ignores target armor (Shield Bearer, etc).'},
-  shaman:      {name:'Shaman',        icon:'🌿',  cost:4, maxHp:35,  atk:13, range:3, spd:2, move:1, special:'poison',       desc:'Poisons target: 4 damage/tick for 4 ticks.'},
-  dragon:      {name:'Dragon',        icon:'🐉',  cost:8, maxHp:90,  atk:30, range:2, spd:3, move:1, special:'cleave',       desc:'Breath: hits ALL enemies within range simultaneously.'},
-  bard:        {name:'Bard',          icon:'🎵',  cost:3, maxHp:22,  atk:10, range:2, spd:2, move:1, special:'buff',         desc:'Grants +10 attack to all adjacent allies this tick.'},
-  warlord:     {name:'Warlord',       icon:'👑',  cost:6, maxHp:65,  atk:22, range:1, spd:2, move:1, special:'warlord',      desc:'Passive: all your pieces gain +6 attack while alive.'},
+  footman:     {name:'Footman',       icon:'⚔️',  maxHp:50,  atk:12, range:1, spd:2, move:1, special:null,           desc:'Reliable melee fighter.'},
+  archer:      {name:'Archer',        icon:'🏹',  maxHp:30,  atk:14, range:3, spd:2, move:1, special:null,           desc:'Ranged. Attacks from up to 3 tiles away.'},
+  knight:      {name:'Knight',        icon:'🐴',  maxHp:70,  atk:20, range:1, spd:2, move:2, special:'fast',         desc:'Moves 2 tiles per tick.'},
+  mage:        {name:'Mage',          icon:'🔮',  maxHp:25,  atk:28, range:4, spd:3, move:1, special:'aoe',          desc:'Hits main target AND one nearby enemy per attack.'},
+  healer:      {name:'Healer',        icon:'💚',  maxHp:28,  atk:8,  range:2, spd:2, move:1, special:'heal',         desc:'Heals the lowest-HP ally (20 HP) instead of attacking.'},
+  shieldbearer:{name:'Shield Bearer', icon:'🛡️',  maxHp:100, atk:10, range:1, spd:3, move:1, special:'armor',        desc:'Takes only 50% damage from all sources.'},
+  ballista:    {name:'Ballista',      icon:'🎯',  maxHp:20,  atk:45, range:5, spd:4, move:0, special:'immobile',     desc:'Cannot move. Extreme range and power.'},
+  berserker:   {name:'Berserker',     icon:'🪓',  maxHp:55,  atk:22, range:1, spd:1, move:1, special:'double',       desc:'Attacks twice per turn.'},
+  monk:        {name:'Monk',          icon:'☯️',  maxHp:40,  atk:16, range:1, spd:2, move:1, special:'counter',      desc:'Reflects 40% of incoming damage back to attacker.'},
+  pyromancer:  {name:'Pyromancer',    icon:'🔥',  maxHp:28,  atk:18, range:3, spd:2, move:1, special:'burn',         desc:'Burns target: deals 3 damage/tick for 4 ticks.'},
+  golem:       {name:'Golem',         icon:'🗿',  maxHp:140, atk:15, range:1, spd:4, move:1, special:'rangedImmune', desc:'Immune to attacks from range > 1.'},
+  assassin:    {name:'Assassin',      icon:'🗡️',  maxHp:28,  atk:40, range:1, spd:2, move:1, special:'bypass',       desc:'Ignores target armor.'},
+  shaman:      {name:'Shaman',        icon:'🌿',  maxHp:35,  atk:13, range:3, spd:2, move:1, special:'poison',       desc:'Poisons target: 4 damage/tick for 4 ticks.'},
+  dragon:      {name:'Dragon',        icon:'🐉',  maxHp:90,  atk:30, range:2, spd:3, move:1, special:'cleave',       desc:'Hits ALL enemies within range simultaneously.'},
+  bard:        {name:'Bard',          icon:'🎵',  maxHp:22,  atk:10, range:2, spd:2, move:1, special:'buff',         desc:'Grants +10 attack to all adjacent allies.'},
+  warlord:     {name:'Warlord',       icon:'👑',  maxHp:65,  atk:22, range:1, spd:2, move:1, special:'warlord',      desc:'Passive: all your pieces gain +6 attack while alive.'},
 };
 
-const BUDGET    = 30;
-const BSIZE     = 8;
-const RED_ROWS  = [0, 3];   // rows 0-2 inclusive (red placement zone)
-const BLUE_ROWS = [5, 8];   // rows 5-7 inclusive (blue placement zone)
-let   TICK_MS   = 600;
-
-// ═══════════════════════════════════════════════════════
-//  GAME STATE
-// ═══════════════════════════════════════════════════════
-let G = {};
-let PID = 0;
-let battleTimer = null;
-let flashMap = {};   // pieceId → 'atk'|'hit'
+const BSIZE          = 8;
+const PIECES_PER_SIDE = 10;
+const RED_ROWS       = [0, 3];
+const BLUE_ROWS      = [5, 8];
+let TICK_MS          = 600;
+let G = {}, PID = 0, battleTimer = null, flashMap = {}, tickNum = 0;
 
 function mkPiece(type, owner) {
   const d = PDEFS[type];
-  return {
-    id: ++PID, type, owner,
-    hp: d.maxHp, maxHp: d.maxHp,
-    atk: d.atk, atkBonus: 0,
-    range: d.range, spd: d.spd, move: d.move, special: d.special,
-    cooldown: 0,
-    status: {burn:0, poison:0},
-  };
+  return { id:++PID, type, owner,
+    hp:d.maxHp, maxHp:d.maxHp, atk:d.atk, atkBonus:0,
+    range:d.range, spd:d.spd, move:d.move, special:d.special,
+    cooldown:0, status:{burn:0,poison:0} };
 }
 
 function initGame() {
   if (battleTimer) { clearInterval(battleTimer); battleTimer = null; }
-  PID = 0; flashMap = {};
-  G = {
-    board: Array.from({length:BSIZE}, () => Array(BSIZE).fill(null)),
-    phase: 'setup-red',   // setup-red | setup-blue | ready | battle | gameover
-    gold:  [BUDGET, BUDGET],
-    shopSel: null,
-  };
+  PID = 0; flashMap = {}; tickNum = 0;
+  G = { board: Array.from({length:BSIZE}, ()=>Array(BSIZE).fill(null)),
+        phase:'battle', maxHP:[0,0], kills:[0,0] };
   clearLog();
   document.getElementById('overlay').classList.remove('show');
-  document.getElementById('btn-done').style.display  = '';
-  document.getElementById('btn-start').style.display = 'none';
-  document.getElementById('speed-row').style.display = 'none';
-  render();
-  setMsg('Select a piece from the shop, then click your highlighted zone.');
-}
-
-// ═══════════════════════════════════════════════════════
-//  BOARD UTILITIES
-// ═══════════════════════════════════════════════════════
-function bget(r,c) { return (r>=0&&r<BSIZE&&c>=0&&c<BSIZE) ? G.board[r][c] : null; }
-
-function chebyshev(r1,c1,r2,c2) { return Math.max(Math.abs(r1-r2),Math.abs(c1-c2)); }
-
-function allPieces() {
-  const out=[];
-  for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++) if(G.board[r][c]) out.push({p:G.board[r][c],r,c});
-  return out;
-}
-
-function living(owner) {
-  return allPieces().filter(x=>x.p.owner===owner && x.p.hp>0);
-}
-
-function shuffle(arr) {
-  const a=[...arr];
-  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
-  return a;
-}
-
-// ═══════════════════════════════════════════════════════
-//  SETUP PHASE
-// ═══════════════════════════════════════════════════════
-function placementZone(owner) {
-  const [r0,r1] = owner===0 ? RED_ROWS : BLUE_ROWS;
-  const cells=[];
-  for(let r=r0;r<r1;r++) for(let c=0;c<BSIZE;c++) if(!G.board[r][c]) cells.push({r,c});
-  return cells;
-}
-
-function inZone(r, owner) {
-  const [r0,r1] = owner===0 ? RED_ROWS : BLUE_ROWS;
-  return r>=r0 && r<r1;
-}
-
-function clickSetupCell(r,c) {
-  const owner = G.phase==='setup-red' ? 0 : 1;
-  const piece  = G.board[r][c];
-
-  // Click own piece → refund & remove
-  if (piece && piece.owner===owner) {
-    G.gold[owner] += PDEFS[piece.type].cost;
-    G.board[r][c] = null;
-    G.shopSel = null;
-    render(); return;
-  }
-  if (!G.shopSel) { setMsg('Pick a piece from the shop first!'); return; }
-
-  const def = PDEFS[G.shopSel];
-  if (!inZone(r, owner)) { setMsg('Place only in your highlighted zone!'); return; }
-  if (G.board[r][c])      { setMsg('That cell is occupied!'); return; }
-  if (G.gold[owner] < def.cost) { setMsg('Not enough gold!'); return; }
-
-  G.board[r][c] = mkPiece(G.shopSel, owner);
-  G.gold[owner] -= def.cost;
-  G.shopSel = null;
-  render();
-}
-
-function clickShop(type) {
-  if (G.phase!=='setup-red' && G.phase!=='setup-blue') return;
-  const owner = G.phase==='setup-red' ? 0 : 1;
-  if (G.gold[owner] < PDEFS[type].cost) return;
-  G.shopSel = G.shopSel===type ? null : type;
-  render();
-}
-
-function doneSetup() {
-  if (G.phase==='setup-red') {
-    G.phase='setup-blue'; G.shopSel=null;
-    logS('Red army is set! 🔵 Blue — place your pieces.');
-    render();
-    setMsg('Blue: select pieces and click your highlighted zone. Click placed pieces to refund.');
-  } else if (G.phase==='setup-blue') {
-    G.phase='ready'; G.shopSel=null;
-    document.getElementById('btn-done').style.display  = 'none';
-    document.getElementById('btn-start').style.display = '';
-    logS('Both armies placed. Click ⚔️ Start Battle!');
-    render();
-    setMsg('Both armies ready. Press Start Battle!');
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-//  BATTLE PHASE
-// ═══════════════════════════════════════════════════════
-function startBattle() {
-  if (G.phase!=='ready') return;
-  G.phase='battle';
-  document.getElementById('btn-start').style.display='none';
-  document.getElementById('speed-row').style.display='flex';
+  document.getElementById('tick-count').textContent = 'Tick 0';
+  autoSetup();
   logS('⚔️ BATTLE BEGINS! ⚔️');
   render();
   battleTimer = setInterval(battleTick, TICK_MS);
 }
 
-function setSpeed(ms, btn) {
-  TICK_MS = ms;
-  if (battleTimer) { clearInterval(battleTimer); battleTimer = setInterval(battleTick, TICK_MS); }
-  document.querySelectorAll('.spd-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
+function autoSetup() {
+  const types = Object.keys(PDEFS);
+  [0,1].forEach(owner => {
+    const [r0,r1] = owner===0 ? RED_ROWS : BLUE_ROWS;
+    const cells = [];
+    for (let r=r0; r<r1; r++)
+      for (let c=0; c<BSIZE; c++) cells.push({r,c});
+    const sc = shuffle(cells);
+    const st = shuffle([...types]);
+    const count = Math.min(PIECES_PER_SIDE, sc.length);
+    for (let i=0; i<count; i++) {
+      const {r,c} = sc[i];
+      G.board[r][c] = mkPiece(st[i % st.length], owner);
+    }
+    G.maxHP[owner] = living(owner).reduce((s,x)=>s+x.p.maxHp, 0);
+  });
 }
 
+/* ── Board utils ─────────────────────────────────── */
+function bget(r,c) { return (r>=0&&r<BSIZE&&c>=0&&c<BSIZE) ? G.board[r][c] : null; }
+function chebyshev(r1,c1,r2,c2) { return Math.max(Math.abs(r1-r2),Math.abs(c1-c2)); }
+function allPieces() {
+  const out=[];
+  for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++) if(G.board[r][c]) out.push({p:G.board[r][c],r,c});
+  return out;
+}
+function living(owner) { return allPieces().filter(x=>x.p.owner===owner&&x.p.hp>0); }
+function shuffle(arr) {
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+
+/* ── Battle tick ─────────────────────────────────── */
 function battleTick() {
   if (G.phase!=='battle') return;
+  tickNum++;
+  document.getElementById('tick-count').textContent = 'Tick '+tickNum;
   flashMap = {};
 
-  // 1. Status damage (burn / poison) on all pieces
-  allPieces().forEach(({p}) => {
-    if (p.hp<=0) return;
-    if (p.status.burn>0)   { const d=3; p.hp=Math.max(0,p.hp-d); p.status.burn--;   flashMap[p.id]='hit'; }
-    if (p.status.poison>0) { const d=4; p.hp=Math.max(0,p.hp-d); p.status.poison--; flashMap[p.id]='hit'; }
+  allPieces().forEach(({p})=>{
+    if(p.hp<=0) return;
+    if(p.status.burn>0)   {p.hp=Math.max(0,p.hp-3);p.status.burn--;  flashMap[p.id]='hit';}
+    if(p.status.poison>0) {p.hp=Math.max(0,p.hp-4);p.status.poison--;flashMap[p.id]='hit';}
   });
 
-  // 2. Passive buffs (warlord, bard)
   allPieces().forEach(({p})=>{p.atkBonus=0;});
   allPieces().forEach(({p})=>{
-    if(p.hp>0 && p.special==='warlord') living(p.owner).forEach(({p:a})=>{a.atkBonus+=6;});
+    if(p.hp>0&&p.special==='warlord') living(p.owner).forEach(({p:a})=>{a.atkBonus+=6;});
   });
   allPieces().forEach(({p,r,c})=>{
-    if(p.hp>0 && p.special==='buff'){
+    if(p.hp>0&&p.special==='buff'){
       for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
         if(!dr&&!dc) continue;
         const n=bget(r+dr,c+dc);
@@ -438,366 +270,254 @@ function battleTick() {
     }
   });
 
-  // 3. Decrement attack cooldowns
-  allPieces().forEach(({p})=>{ if(p.cooldown>0) p.cooldown--; });
+  allPieces().forEach(({p})=>{if(p.cooldown>0)p.cooldown--;});
 
-  // 4. Each piece acts (shuffled order for fairness)
-  shuffle(allPieces().filter(x=>x.p.hp>0)).forEach(({p,r,c})=>{
+  shuffle(allPieces().filter(x=>x.p.hp>0)).forEach(({p})=>{
     if(p.hp<=0) return;
-    // Find the current position of this piece (may have moved this tick)
-    const pos = findPos(p.id);
-    if(!pos) return;
-    const pr=pos.r, pc=pos.c;
+    const pos=findPos(p.id); if(!pos) return;
+    const {r:pr,c:pc}=pos;
 
-    if(p.special==='heal')   { actHealer(p,pr,pc); return; }
-    if(p.special==='cleave') { actCleave(p,pr,pc); return; }
+    if(p.special==='heal')   {actHealer(p,pr,pc);return;}
+    if(p.special==='cleave') {actCleave(p,pr,pc);return;}
 
-    const enemies = enemiesInRange(p,pr,pc);
-    if(enemies.length>0 && p.cooldown<=0) {
-      // ATTACK
-      const tgt = enemies[0];
-      doAttack(p,pr,pc, tgt.p,tgt.r,tgt.c);
-      if(p.special==='double' && p.hp>0) {
-        // second hit: re-check target alive or pick next
-        const tgt2 = tgt.p.hp>0 ? tgt : (enemies[1]||null);
-        if(tgt2) doAttack(p,pr,pc, tgt2.p,tgt2.r,tgt2.c);
+    const enemies=enemiesInRange(p,pr,pc);
+    if(enemies.length>0&&p.cooldown<=0){
+      const tgt=enemies[0];
+      doAttack(p,pr,pc,tgt.p,tgt.r,tgt.c);
+      if(p.special==='double'&&p.hp>0){
+        const t2=tgt.p.hp>0?tgt:(enemies[1]||null);
+        if(t2) doAttack(p,pr,pc,t2.p,t2.r,t2.c);
       }
-      if(p.special==='aoe' && enemies.length>1) {
-        doAttack(p,pr,pc, enemies[1].p,enemies[1].r,enemies[1].c);
-      }
-      p.cooldown = p.spd;
-      flashMap[p.id] = 'atk';
-    } else if(p.move>0) {
-      // MOVE toward nearest enemy
-      const near = nearestEnemy(p,pr,pc);
+      if(p.special==='aoe'&&enemies.length>1)
+        doAttack(p,pr,pc,enemies[1].p,enemies[1].r,enemies[1].c);
+      p.cooldown=p.spd; flashMap[p.id]='atk';
+    } else if(p.move>0){
+      const near=nearestEnemy(p,pr,pc);
       if(near) movePiece(p,pr,pc,near.r,near.c);
     }
   });
 
-  // 5. Clear per-tick attack bonuses
-  allPieces().forEach(({p})=>{ p.atkBonus=0; });
-
-  // 6. Remove dead pieces
+  allPieces().forEach(({p})=>{p.atkBonus=0;});
   removeDead();
 
-  // 7. Check win
   const rc=living(0).length, bc=living(1).length;
-  if(rc===0 && bc===0) { endBattle('🤝 Draw!','Both armies fell simultaneously!',-1); return; }
-  if(rc===0)           { endBattle('🔵 Blue Wins!','Red army wiped out!',1);          return; }
-  if(bc===0)           { endBattle('🔴 Red Wins!', 'Blue army wiped out!',0);         return; }
-
+  if(rc===0&&bc===0){endBattle('🤝 Draw!','Both armies fell simultaneously!');return;}
+  if(rc===0)        {endBattle('🔵 Blue Wins!','Red army wiped out!');        return;}
+  if(bc===0)        {endBattle('🔴 Red Wins!', 'Blue army wiped out!');       return;}
   render();
 }
 
-// ── Combat helpers ──────────────────────────────────────
-function doAttack(atk, ar, ac, tgt, tr, tc) {
+/* ── Combat ──────────────────────────────────────── */
+function doAttack(atk,ar,ac,tgt,tr,tc){
   if(!tgt||tgt.hp<=0) return;
-  const dist = chebyshev(ar,ac,tr,tc);
-
-  // Ranged immunity
-  if(tgt.special==='rangedImmune' && dist>1) {
+  if(tgt.special==='rangedImmune'&&chebyshev(ar,ac,tr,tc)>1){
     logR(atk,` → ${pn(tgt)} IMMUNE to ranged!`); return;
   }
-
-  let dmg = Math.max(1, atk.atk + atk.atkBonus);
-  if(tgt.special==='armor' && atk.special!=='bypass') dmg = Math.max(1, Math.floor(dmg*0.5));
-
-  tgt.hp = Math.max(0, tgt.hp - dmg);
-  flashMap[tgt.id] = 'hit';
-  logR(atk, ` hits ${pn(tgt)} for ${dmg}`);
-
-  // Counter (Monk)
-  if(tgt.special==='counter' && tgt.hp>0 && atk.hp>0) {
-    const cdmg = Math.max(1, Math.floor(dmg*0.4));
-    atk.hp = Math.max(0, atk.hp - cdmg);
-    flashMap[atk.id]='hit';
-    logS(`${pn(tgt)} counters ${pn(atk)} for ${cdmg}!`);
+  let dmg=Math.max(1,atk.atk+atk.atkBonus);
+  if(tgt.special==='armor'&&atk.special!=='bypass') dmg=Math.max(1,dmg>>1);
+  tgt.hp=Math.max(0,tgt.hp-dmg);
+  flashMap[tgt.id]='hit';
+  logR(atk,` hits ${pn(tgt)} for ${dmg}`);
+  if(tgt.special==='counter'&&tgt.hp>0&&atk.hp>0){
+    const cd=Math.max(1,dmg*0.4|0);
+    atk.hp=Math.max(0,atk.hp-cd); flashMap[atk.id]='hit';
+    logS(`${pn(tgt)} counters ${pn(atk)} for ${cd}!`);
   }
-  // Burn
-  if(atk.special==='burn' && tgt.hp>0 && tgt.status.burn===0) {
-    tgt.status.burn=4; logS(`${pn(tgt)} is burning! 🔥`);
-  }
-  // Poison
-  if(atk.special==='poison' && tgt.hp>0 && tgt.status.poison===0) {
-    tgt.status.poison=4; logS(`${pn(tgt)} is poisoned! 🟢`);
-  }
+  if(atk.special==='burn'  &&tgt.hp>0&&tgt.status.burn  ===0){tgt.status.burn  =4;logS(`${pn(tgt)} is burning! 🔥`);}
+  if(atk.special==='poison'&&tgt.hp>0&&tgt.status.poison===0){tgt.status.poison=4;logS(`${pn(tgt)} is poisoned! 🟢`);}
 }
 
-function actHealer(p, r, c) {
-  if(p.cooldown>0) { tryMove(p,r,c); return; }
-  const injured = living(p.owner)
-    .filter(x=>x.p.id!==p.id && x.p.hp<x.p.maxHp && chebyshev(r,c,x.r,x.c)<=p.range)
+function actHealer(p,r,c){
+  if(p.cooldown>0){tryMove(p,r,c);return;}
+  const inj=living(p.owner)
+    .filter(x=>x.p.id!==p.id&&x.p.hp<x.p.maxHp&&chebyshev(r,c,x.r,x.c)<=p.range)
     .sort((a,b)=>a.p.hp-b.p.hp);
-  if(injured.length>0) {
-    const h=20;
-    injured[0].p.hp = Math.min(injured[0].p.maxHp, injured[0].p.hp+h);
-    logS(`💚 ${pn(p)} heals ${pn(injured[0].p)} for ${h} HP!`);
-    flashMap[injured[0].p.id]='atk';
-    p.cooldown=p.spd;
-  } else { tryMove(p,r,c); }
+  if(inj.length>0){
+    inj[0].p.hp=Math.min(inj[0].p.maxHp,inj[0].p.hp+20);
+    logS(`💚 ${pn(p)} heals ${pn(inj[0].p)} for 20 HP!`);
+    flashMap[inj[0].p.id]='atk'; p.cooldown=p.spd;
+  } else {tryMove(p,r,c);}
 }
 
-function actCleave(p, r, c) {
-  const enemies = enemiesInRange(p,r,c);
-  if(enemies.length>0 && p.cooldown<=0) {
+function actCleave(p,r,c){
+  const enemies=enemiesInRange(p,r,c);
+  if(enemies.length>0&&p.cooldown<=0){
     enemies.forEach(e=>doAttack(p,r,c,e.p,e.r,e.c));
     p.cooldown=p.spd; flashMap[p.id]='atk';
-  } else if(enemies.length===0) { tryMove(p,r,c); }
+  } else if(!enemies.length) tryMove(p,r,c);
 }
 
-function tryMove(p,r,c) {
-  if(p.move<=0) return;
-  const near = nearestEnemy(p,r,c);
+function tryMove(p,r,c){
+  if(!p.move) return;
+  const near=nearestEnemy(p,r,c);
   if(near) movePiece(p,r,c,near.r,near.c);
 }
 
-function enemiesInRange(piece,r,c) {
+function enemiesInRange(piece,r,c){
   return allPieces()
-    .filter(x=>x.p.owner!==piece.owner && x.p.hp>0 && chebyshev(r,c,x.r,x.c)<=piece.range)
+    .filter(x=>x.p.owner!==piece.owner&&x.p.hp>0&&chebyshev(r,c,x.r,x.c)<=piece.range)
     .sort((a,b)=>{
-      const da=chebyshev(r,c,a.r,a.c), db=chebyshev(r,c,b.r,b.c);
-      return da!==db ? da-db : a.p.hp-b.p.hp;
+      const da=chebyshev(r,c,a.r,a.c),db=chebyshev(r,c,b.r,b.c);
+      return da!==db?da-db:a.p.hp-b.p.hp;
     });
 }
 
-function nearestEnemy(piece,r,c) {
-  const list = allPieces()
-    .filter(x=>x.p.owner!==piece.owner && x.p.hp>0)
+function nearestEnemy(piece,r,c){
+  const list=allPieces()
+    .filter(x=>x.p.owner!==piece.owner&&x.p.hp>0)
     .sort((a,b)=>chebyshev(r,c,a.r,a.c)-chebyshev(r,c,b.r,b.c));
   return list[0]||null;
 }
 
-function findPos(id) {
+function findPos(id){
   for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++)
     if(G.board[r][c]&&G.board[r][c].id===id) return {r,c};
   return null;
 }
 
-// Move piece 'p' from (r,c) toward (tr,tc) up to p.move steps
-function movePiece(p,r,c,tr,tc) {
-  let cr=r, cc=c;
-  for(let i=0;i<p.move;i++) {
-    const dr=Math.sign(tr-cr), dc=Math.sign(tc-cc);
-    if(dr===0&&dc===0) break;
-    // Preferred directions: diagonal first, then cardinal, then sideways fallbacks
+function movePiece(p,r,c,tr,tc){
+  let cr=r,cc=c;
+  for(let i=0;i<p.move;i++){
+    const dr=Math.sign(tr-cr),dc=Math.sign(tc-cc);
+    if(!dr&&!dc) break;
     const dirs=[];
-    if(dr!==0&&dc!==0) dirs.push([dr,dc]);
-    if(dr!==0) dirs.push([dr,0]);
-    if(dc!==0) dirs.push([0,dc]);
-    // Orthogonal fallbacks (avoid getting stuck)
-    if(dr!==0) dirs.push([0, dc!==0 ? -dc : 1], [0, dc!==0 ? -dc : -1]);
-    if(dc!==0) dirs.push([dr!==0 ? -dr : 1, 0], [dr!==0 ? -dr : -1, 0]);
-    let stepped=false;
-    for(const [nr,nc] of dirs) {
-      const nr2=cr+nr, nc2=cc+nc;
-      if(nr2>=0&&nr2<BSIZE&&nc2>=0&&nc2<BSIZE&&!G.board[nr2][nc2]) {
-        cr=nr2; cc=nc2; stepped=true; break;
-      }
+    if(dr&&dc) dirs.push([dr,dc]);
+    if(dr) dirs.push([dr,0]);
+    if(dc) dirs.push([0,dc]);
+    if(dr) dirs.push([0,dc?-dc:1],[0,dc?-dc:-1]);
+    if(dc) dirs.push([dr?-dr:1,0],[dr?-dr:-1,0]);
+    let ok=false;
+    for(const [nr,nc] of dirs){
+      const r2=cr+nr,c2=cc+nc;
+      if(r2>=0&&r2<BSIZE&&c2>=0&&c2<BSIZE&&!G.board[r2][c2]){cr=r2;cc=c2;ok=true;break;}
     }
-    if(!stepped) break;
+    if(!ok) break;
   }
   if(cr===r&&cc===c) return;
-  G.board[cr][cc]=p;
-  G.board[r][c]=null;
+  G.board[cr][cc]=p; G.board[r][c]=null;
 }
 
-function removeDead() {
-  for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++)
-    if(G.board[r][c]&&G.board[r][c].hp<=0) { logS(`💀 ${pn(G.board[r][c])} falls!`); G.board[r][c]=null; }
+function removeDead(){
+  for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++){
+    const p=G.board[r][c];
+    if(p&&p.hp<=0){logS(`💀 ${pn(p)} falls!`);G.kills[p.owner===0?1:0]++;G.board[r][c]=null;}
+  }
 }
 
-function endBattle(winText, subText) {
+function endBattle(winText,subText){
   clearInterval(battleTimer); battleTimer=null;
-  G.phase='gameover';
-  render();
+  G.phase='gameover'; render();
   setTimeout(()=>{
     document.getElementById('win-text').textContent=winText;
-    document.getElementById('win-sub').textContent=subText;
+    document.getElementById('win-sub').textContent =subText;
+    document.getElementById('win-stats').innerHTML =
+      `Ticks: ${tickNum}<br>🔴 Red kills: ${G.kills[0]} &nbsp;|&nbsp; 🔵 Blue kills: ${G.kills[1]}`;
     document.getElementById('overlay').classList.add('show');
-  }, 400);
+  },500);
 }
 
-// ═══════════════════════════════════════════════════════
-//  RENDERING
-// ═══════════════════════════════════════════════════════
-function render() {
-  renderBanner();
-  renderHUD();
-  renderBoard();
-  renderShop();
+function setSpeed(ms,btn){
+  TICK_MS=ms;
+  if(battleTimer){clearInterval(battleTimer);battleTimer=setInterval(battleTick,TICK_MS);}
+  document.querySelectorAll('.spd-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
 }
 
-function renderBanner() {
-  const b=document.getElementById('phase-banner');
-  const map={
-    'setup-red' :['🔴 Red Player — Place Your Army (top 3 rows)',    '#ff7070','#ff7070'],
-    'setup-blue':['🔵 Blue Player — Place Your Army (bottom 3 rows)', '#7099ff','#7099ff'],
-    'ready'     :['✅ Both Ready — Press Start Battle!',              '#ffd700','#ffd700'],
-    'battle'    :['⚔️ Battle in Progress!',                           '#ffd700','#ffd700'],
-    'gameover'  :['🏆 Game Over',                                      '#ffd700','#ffd700'],
-  };
-  const [text,col,border]=map[G.phase]||['','#888','#888'];
-  b.textContent=text; b.style.color=col; b.style.borderColor=border;
+/* ── Rendering ───────────────────────────────────── */
+function render(){
+  document.getElementById('phase-banner').textContent =
+    G.phase==='gameover'?'🏆 Game Over':'⚔️ Battle in Progress!';
+  renderHUD(); renderBoard();
 }
 
-function renderHUD() {
-  const rc=living(0).length, bc=living(1).length;
-  document.getElementById('gold-red') .textContent=`💰 ${G.gold[0]} / ${BUDGET}`;
-  document.getElementById('gold-blue').textContent=`💰 ${G.gold[1]} / ${BUDGET}`;
-  document.getElementById('count-red') .textContent=`Pieces: ${rc}`;
-  document.getElementById('count-blue').textContent=`Pieces: ${bc}`;
-  document.getElementById('hud-red') .classList.toggle('hud-active',G.phase==='setup-red');
-  document.getElementById('hud-blue').classList.toggle('hud-active',G.phase==='setup-blue');
-  const st=document.getElementById('shop-title');
-  st.textContent = G.phase==='setup-red'  ? '🛒 Red Shop (30 gold)' :
-                   G.phase==='setup-blue' ? '🛒 Blue Shop (30 gold)' : '🛒 Shop';
+function renderHUD(){
+  [0,1].forEach(owner=>{
+    const id=owner===0?'red':'blue';
+    const lv=living(owner);
+    const cur=lv.reduce((s,x)=>s+x.p.hp,0);
+    const max=G.maxHP[owner]||1;
+    const pct=Math.max(0,(cur/max*100)|0);
+    const col=pct>55?'#44dd44':pct>25?'#ddbb44':'#dd4444';
+    document.getElementById(`hp-fill-${id}`).style.cssText=`width:${pct}%;background:${col}`;
+    document.getElementById(`hp-text-${id}`).textContent=`${cur} / ${max} HP  (${pct}%)`;
+    document.getElementById(`count-${id}`).textContent=`♟ ${lv.length}`;
+  });
 }
 
-function renderBoard() {
+function renderBoard(){
   const boardEl=document.getElementById('board');
   boardEl.innerHTML='';
-
-  const placeCells=new Set();
-  if(G.phase==='setup-red'||G.phase==='setup-blue') {
-    const owner=G.phase==='setup-red'?0:1;
-    if(G.shopSel) placementZone(owner).forEach(z=>placeCells.add(`${z.r},${z.c}`));
-  }
-
-  for(let r=0;r<BSIZE;r++) {
-    for(let c=0;c<BSIZE;c++) {
-      const div=document.createElement('div');
-      const dark=(r+c)%2===1;
-      div.className='cell '+(dark?'dark':'light');
-
-      // Zone tint during setup / ready
-      if(G.phase==='setup-red'||G.phase==='setup-blue'||G.phase==='ready') {
-        if(r>=RED_ROWS[0]  && r<RED_ROWS[1])  div.classList.add('zone-red');
-        if(r>=BLUE_ROWS[0] && r<BLUE_ROWS[1]) div.classList.add('zone-blue');
-      }
-
-      if(placeCells.has(`${r},${c}`)) div.classList.add('hlt-place');
-
-      div.addEventListener('click',()=>onCellClick(r,c));
-
-      // Render piece
-      const p=G.board[r][c];
-      if(p) {
-        const pel=document.createElement('div');
-        pel.className='piece '+(p.owner===0?'red-pc':'blue-pc');
-        if(flashMap[p.id]==='atk') pel.classList.add('flash-atk');
-        if(flashMap[p.id]==='hit') pel.classList.add('flash-hit');
-
-        const def=PDEFS[p.type];
-        const hpPct=Math.max(0,(p.hp/p.maxHp)*100);
-        const hpCol=hpPct>55?'#44dd44':hpPct>25?'#ddbb44':'#dd4444';
-        let st='';
-        if(p.status.burn>0)   st+='🔥';
-        if(p.status.poison>0) st+='🟢';
-
-        pel.innerHTML=
-          (st?`<div class="status-dot">${st}</div>`:'')
-          +`<div class="piece-icon">${def.icon}</div>`
-          +`<div class="piece-lbl">${def.name}</div>`
-          +`<div class="hp-bar"><div class="hp-fill" style="width:${hpPct}%;background:${hpCol}"></div></div>`;
-
-        pel.addEventListener('click',e=>{e.stopPropagation();onPieceClick(r,c,p);});
-        pel.addEventListener('mouseenter',()=>showInfo(p.type,p));
-        div.appendChild(pel);
-      }
-
-      boardEl.appendChild(div);
+  for(let r=0;r<BSIZE;r++) for(let c=0;c<BSIZE;c++){
+    const div=document.createElement('div');
+    const dark=(r+c)%2===1;
+    const inRed =r>=RED_ROWS[0] &&r<RED_ROWS[1];
+    const inBlue=r>=BLUE_ROWS[0]&&r<BLUE_ROWS[1];
+    div.className='cell '+(dark?'dark':'light')
+      +(inRed?' zr':'')+(inBlue?' zb':'')
+      +(r===RED_ROWS[1]-1?' mid-top':'')
+      +(r===BLUE_ROWS[0]?' mid-bottom':'');
+    const p=G.board[r][c];
+    if(p){
+      const pel=document.createElement('div');
+      pel.className='piece '+(p.owner===0?'red-pc':'blue-pc');
+      if(flashMap[p.id]==='atk') pel.classList.add('flash-atk');
+      if(flashMap[p.id]==='hit') pel.classList.add('flash-hit');
+      const def=PDEFS[p.type];
+      const hp=(p.hp/p.maxHp*100)|0;
+      const hc=hp>55?'#44dd44':hp>25?'#ddbb44':'#dd4444';
+      let st='';
+      if(p.status.burn>0)   st+='🔥';
+      if(p.status.poison>0) st+='🟢';
+      pel.innerHTML=(st?`<div class="status-dot">${st}</div>`:'')
+        +`<div class="piece-icon">${def.icon}</div>`
+        +`<div class="piece-lbl">${def.name}</div>`
+        +`<div class="hp-bar"><div class="hp-fill" style="width:${hp}%;background:${hc}"></div></div>`;
+      pel.addEventListener('mouseenter',()=>showInfo(p.type,p));
+      div.appendChild(pel);
     }
+    boardEl.appendChild(div);
   }
 }
 
-function renderShop() {
-  const grid=document.getElementById('shop-grid');
-  grid.innerHTML='';
-  const isSetup=G.phase==='setup-red'||G.phase==='setup-blue';
-  const owner=G.phase==='setup-red'?0:1;
-  Object.entries(PDEFS).forEach(([type,def])=>{
+function showInfo(type,p){
+  const def=PDEFS[type];
+  const box=document.getElementById('info-box');
+  const hp=p?`${p.hp}/${p.maxHp}`:`${def.maxHp}`;
+  const tag=def.special?`<div class="special-tag">✨ ${def.special}</div>`:'';
+  box.innerHTML=
+    `<div class="info-row"><span>${def.icon} <b>${def.name}</b></span><span>${p?(p.owner===0?'🔴':'🔵'):''}</span></div>`
+   +`<div class="info-row"><span>HP</span><span>${hp}</span></div>`
+   +`<div class="info-row"><span>Attack</span><span>${def.atk}</span></div>`
+   +`<div class="info-row"><span>Range</span><span>${def.range} tile${def.range>1?'s':''}</span></div>`
+   +`<div class="info-row"><span>Move</span><span>${def.move}/tick</span></div>`
+   +`<div class="info-row"><span>Atk CD</span><span>${def.spd} tick${def.spd>1?'s':''}</span></div>`
+   +tag+`<p class="info-desc">${def.desc}</p>`;
+}
+
+function renderLegend(){
+  const grid=document.getElementById('legend-grid');
+  Object.entries(PDEFS).forEach(([k,def])=>{
     const it=document.createElement('div');
-    it.className='shop-item';
-    const canBuy=isSetup&&G.gold[owner]>=def.cost;
-    if(!canBuy) it.classList.add('unafford');
-    if(G.shopSel===type&&isSetup) it.classList.add('sel-shop');
-    it.innerHTML=`<div class="si-icon">${def.icon}</div><div class="si-cost">💰${def.cost}</div>`;
-    it.title=`${def.name} | HP:${def.maxHp} ATK:${def.atk} Range:${def.range} SPD:${def.spd}cd | ${def.desc}`;
-    it.addEventListener('mouseenter',()=>showInfo(type));
-    if(canBuy) it.addEventListener('click',()=>clickShop(type));
+    it.className='leg-item';
+    it.innerHTML=`<div class="leg-icon">${def.icon}</div><div class="leg-name">${def.name}</div>`;
+    it.title=`${def.name} | HP:${def.maxHp} ATK:${def.atk} Range:${def.range} | ${def.desc}`;
+    it.addEventListener('mouseenter',()=>showInfo(k));
     grid.appendChild(it);
   });
 }
 
-// ═══════════════════════════════════════════════════════
-//  INFO PANEL
-// ═══════════════════════════════════════════════════════
-function showInfo(type, p) {
-  const def=PDEFS[type];
-  const box=document.getElementById('info-box');
-  const hp  = p ? `${p.hp} / ${p.maxHp}` : `— / ${def.maxHp}`;
-  const atkD= p ? `${def.atk}${p.atkBonus?` (+${p.atkBonus})`:''}` : `${def.atk}`;
-  const tag = def.special ? `<div class="special-tag">✨ ${def.special}</div>` : '';
-  box.innerHTML=
-    `<div class="info-row"><span>${def.icon} <b>${def.name}</b></span><span>💰 ${def.cost}</span></div>`
-   +`<div class="info-row"><span>HP</span><span>${hp}</span></div>`
-   +`<div class="info-row"><span>Attack</span><span>${atkD}</span></div>`
-   +`<div class="info-row"><span>Range</span><span>${def.range} tile${def.range>1?'s':''}</span></div>`
-   +`<div class="info-row"><span>Move</span><span>${def.move} tile${def.move!==1?'s':''}/tick</span></div>`
-   +`<div class="info-row"><span>Atk Speed</span><span>every ${def.spd} tick${def.spd>1?'s':''}</span></div>`
-   +tag
-   +`<p class="info-desc">${def.desc}</p>`;
-}
-
-// ═══════════════════════════════════════════════════════
-//  EVENT HANDLERS
-// ═══════════════════════════════════════════════════════
-function onCellClick(r,c) {
-  if(G.phase==='setup-red'||G.phase==='setup-blue') clickSetupCell(r,c);
-}
-
-function onPieceClick(r,c,p) {
-  if(G.phase==='setup-red'||G.phase==='setup-blue') {
-    const owner=G.phase==='setup-red'?0:1;
-    if(p.owner===owner) {
-      // Refund
-      G.gold[owner]+=PDEFS[p.type].cost;
-      G.board[r][c]=null;
-      G.shopSel=null;
-      render();
-    } else { showInfo(p.type,p); }
-  } else { showInfo(p.type,p); }
-}
-
-// ═══════════════════════════════════════════════════════
-//  LOG
-// ═══════════════════════════════════════════════════════
-function pn(p){ return p?PDEFS[p.type].icon+'['+(p.owner===0?'R':'B')+']':'?'; }
-
-function logR(atk,msg) {
-  appendLog(pn(atk)+msg, atk.owner===0?'log-r':'log-b');
-}
-function logS(msg){ appendLog(msg,'log-s'); }
-
-function appendLog(text,cls) {
+function pn(p){return p?PDEFS[p.type].icon+'['+(p.owner===0?'R':'B')+']':'?';}
+function logR(atk,msg){appendLog(pn(atk)+msg,atk.owner===0?'log-r':'log-b');}
+function logS(msg){appendLog(msg,'log-s');}
+function appendLog(text,cls){
   const el=document.getElementById('log-box');
   const d=document.createElement('div');
-  d.textContent=text; if(cls) d.className=cls;
-  el.appendChild(d);
-  el.scrollTop=el.scrollHeight;
+  d.textContent=text;if(cls)d.className=cls;
+  el.appendChild(d);el.scrollTop=el.scrollHeight;
 }
-function clearLog(){ document.getElementById('log-box').innerHTML=''; }
-
-// ═══════════════════════════════════════════════════════
-//  MISC
-// ═══════════════════════════════════════════════════════
-function setMsg(t){ document.getElementById('ctrl-msg').textContent=t; }
-function resetGame(){ initGame(); }
-
-// ═══════════════════════════════════════════════════════
-//  BOOT
-// ═══════════════════════════════════════════════════════
-window.onload = initGame;
+function clearLog(){document.getElementById('log-box').innerHTML='';}
+function resetGame(){initGame();}
+window.onload=()=>{renderLegend();initGame();};
 </script>
 </body>
 </html>
