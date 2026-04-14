@@ -180,12 +180,18 @@ function seedFromTroops(troops) {
 // Key design:
 //   • Ship size = troop bounding box + small margins.  1 troop → tiny ship.
 //   • Archetype is derived from geometric relationships of the formation:
-//       DRONE  – few troops, wide lateral spread  → thin spine + arm wings
-//       DELTA  – troops widen with depth          → B2 / flying-wing delta
-//       WING   – flat wide row                   → broad flying wing
-//       BOMBER – moderate width, squat depth      → fat bomber silhouette
-//       ROCKET – narrow deep column               → pencil / rocket
-//       FIGHTER– everything else                  → classic jet with nacelles
+//       SAUCER      – ultra-wide flat (same depth, maxA ≥ 6.5)  → flying disc
+//       STINGRAY    – ultra-wide widening delta (maxA ≥ 7)       → manta ray
+//       DELTA       – troops widen with depth                    → B2 / flying-wing delta
+//       DRONE       – few troops, wide lateral spread            → thin spine + arm wings
+//       CARRIER     – wide AND deep formation (maxA ≥ 6)         → supercarrier flight deck
+//       WING        – flat wide spread                           → broad flying wing
+//       INTERCEPTOR – very long + narrow (dSpan ≥ 5, maxA < 3)  → sleek needle fuselage
+//       ROCKET      – deep narrow column                         → pencil / rocket
+//       CRUISER     – long body, moderate width (aspect < 0.9)   → battlecruiser
+//       HAMMERHEAD  – wide nose narrowing to stern               → hammerhead shark
+//       BOMBER      – moderate width, squat depth                → fat bomber silhouette
+//       FIGHTER     – everything else                            → classic jet with nacelles
 // ─────────────────────────────────────────────────────────────────────────────
 function generateHull(troops, side) {
   if (!troops.size) return { hull: new Set(), archetype: 'NONE' };
@@ -226,28 +232,49 @@ function generateHull(troops, side) {
     deltaScore = widening / (sorted.length - 1);
   }
 
+  // Check inverted-delta: troops get progressively narrower with depth (hammerhead / wide nose)
+  let invertedDeltaScore = 0;
+  if (n >= 3 && dSpan >= 2) {
+    const sorted   = [...unique].sort((a, b) => a.depth - b.depth);
+    let narrowing  = 0;
+    for (let i = 1; i < sorted.length; i++)
+      if (sorted[i].absCol < sorted[i - 1].absCol) narrowing++;
+    invertedDeltaScore = narrowing / (sorted.length - 1);
+  }
+
   let archetype;
   if (n === 1 && maxA < 1.5) {
-    archetype = 'ROCKET';                           // single narrow troop
+    archetype = 'ROCKET';                                                     // single narrow troop
+  } else if (deltaScore >= 0.65 && dSpan >= 2 && maxA >= 7) {
+    archetype = 'STINGRAY';                                                   // ultra-wide manta-ray delta
   } else if (deltaScore >= 0.65 && dSpan >= 2) {
-    // ≥65 % of consecutive depth-sorted pairs widen → reliably a triangle/delta formation
-    archetype = 'DELTA';                            // widening triangle → B2
+    archetype = 'DELTA';                                                      // widening triangle → B2
+  } else if (dSpan === 0 && maxA >= 6.5) {
+    archetype = 'SAUCER';                                                     // ultra-wide flat → flying disc
   } else if (maxA >= 4.0 && dSpan === 0) {
-    archetype = 'DRONE';                            // all troops same depth, wide → arm drone
+    archetype = 'DRONE';                                                      // same depth + wide → arm drone
+  } else if (invertedDeltaScore >= 0.65 && dSpan >= 2 && maxA >= 3) {
+    archetype = 'HAMMERHEAD';                                                 // wide nose narrows → hammerhead
+  } else if (dSpan >= 3 && maxA >= 6) {
+    archetype = 'CARRIER';                                                    // wide AND deep → supercarrier
   } else if (aspect >= 2.0 || (n >= 2 && maxA >= 6)) {
-    archetype = 'WING';                             // flat wide spread
+    archetype = 'WING';                                                       // flat wide spread
+  } else if (dSpan >= 5 && maxA < 3) {
+    archetype = 'INTERCEPTOR';                                                // very long + narrow → sleek fuselage
   } else if (dSpan >= 3 && maxA <= 2.5) {
-    archetype = 'ROCKET';                           // deep narrow column
+    archetype = 'ROCKET';                                                     // deep narrow column
+  } else if (dSpan >= 4 && maxA >= 2.5 && aspect < 0.9) {
+    archetype = 'CRUISER';                                                    // long moderate-width → battlecruiser
   } else if (aspect >= 1.0 && maxA >= 2.5) {
-    archetype = 'BOMBER';                           // moderate width/depth
+    archetype = 'BOMBER';                                                     // moderate width/depth
   } else {
     archetype = 'FIGHTER';
   }
 
   // ── Ship size proportional to formation ─────────────────────────────────
   const noseMargin = 1;
-  const tailMargins = { FIGHTER: 2, BOMBER: 2, WING: 2, ROCKET: 3, DRONE: 1, DELTA: 2 };
-  const sideMargins = { FIGHTER: 2, BOMBER: 2, WING: 1, ROCKET: 1, DRONE: 1, DELTA: 1 };
+  const tailMargins = { FIGHTER: 2, BOMBER: 2, WING: 2, ROCKET: 3, DRONE: 1, DELTA: 2, SAUCER: 1, STINGRAY: 2, CARRIER: 2, INTERCEPTOR: 3, CRUISER: 2, HAMMERHEAD: 2 };
+  const sideMargins = { FIGHTER: 2, BOMBER: 2, WING: 1, ROCKET: 1, DRONE: 1, DELTA: 1, SAUCER: 1, STINGRAY: 1, CARRIER: 1, INTERCEPTOR: 1, CRUISER: 2, HAMMERHEAD: 1 };
   const tailMargin  = tailMargins[archetype] || 2;
   const sideMargin  = sideMargins[archetype] || 2;
   const shipDepth   = Math.min(9, Math.max(3, dSpan + noseMargin + tailMargin));
@@ -290,6 +317,34 @@ function generateHull(troops, side) {
         // Razor point → steadily sweeps to a broad trailing delta edge (B2)
         if (t < 0.10) return t / 0.10 * 0.12;
         return 0.12 + (t - 0.10) / 0.90 * 0.88;
+      case 'SAUCER':
+        // Flying disc: smooth sinusoidal lens – narrow rim, wide equator
+        return Math.sin(t * Math.PI) * 0.70 + 0.30;
+      case 'STINGRAY':
+        // Manta ray: razor tip → fast curving sweep to ultra-wide trailing edge
+        if (t < 0.05) return t / 0.05 * 0.10;
+        return 0.10 + Math.sqrt((t - 0.05) / 0.95) * 0.90;
+      case 'CARRIER':
+        // Supercarrier: blunt nose, nearly rectangular flat deck, slight stern taper
+        if (t < 0.10) return t / 0.10 * 0.82;
+        if (t < 0.88) return 0.82 + (t - 0.10) / 0.78 * 0.18;
+        return 1.00 - (t - 0.88) / 0.12 * 0.30;
+      case 'INTERCEPTOR':
+        // Sleek needle: sharp tapered nose, slim straight fuselage, engine flare
+        if (t < 0.08) return t / 0.08 * 0.42;
+        if (t < 0.55) return 0.42 + (t - 0.08) / 0.47 * 0.28;
+        if (t < 0.80) return 0.70 - (t - 0.55) / 0.25 * 0.20;
+        return 0.50 + (t - 0.80) / 0.20 * 0.25; // engine nozzle flare
+      case 'CRUISER':
+        // Battlecruiser: long straight hull with rounded bow, flat midsection, twin-pod stern
+        if (t < 0.12) return t / 0.12 * 0.65;
+        if (t < 0.75) return 0.65 + (t - 0.12) / 0.63 * 0.35;
+        return 1.00 - (t - 0.75) / 0.25 * 0.35;
+      case 'HAMMERHEAD':
+        // Wide hammer nose → narrow neck → broad flared stern
+        if (t < 0.18) return 1.00 - (t / 0.18) * 0.50;
+        if (t < 0.50) return 0.50 - (t - 0.18) / 0.32 * 0.25;
+        return 0.25 + (t - 0.50) / 0.50 * 0.75;
       default:
         return 0.5;
     }
@@ -368,6 +423,91 @@ function generateHull(troops, side) {
       const lo   = 10 - nacW - 1,  hi = 9 + nacW + 1;
       if (lo >= 0) hull.add(`${row},${lo}`);
       if (hi < G)  hull.add(`${row},${hi}`);
+    }
+  }
+
+  // ── CRUISER: pronounced twin engine pods at stern ────────────────────────
+  if (archetype === 'CRUISER' && shipDepth >= 5) {
+    for (let k = shipDepth - 3; k < shipDepth; k++) {
+      const row = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer  && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9  || row < 0))  continue;
+      const podW = widths[k] + 2;
+      const lo   = Math.max(0,    10 - podW - 2);
+      const hi   = Math.min(G-1,   9 + podW + 2);
+      hull.add(`${row},${lo}`); hull.add(`${row},${lo + 1}`);
+      hull.add(`${row},${hi}`); hull.add(`${row},${hi - 1}`);
+    }
+  }
+
+  // ── INTERCEPTOR: sharp needle nose extension ─────────────────────────────
+  if (archetype === 'INTERCEPTOR') {
+    const noseRow = isPlayer ? 10 + hullBase - 1 : 9 - hullBase + 1;
+    if (noseRow >= 0 && noseRow < G) {
+      if (isPlayer  && noseRow >= 10) { hull.add(`${noseRow},9`); hull.add(`${noseRow},10`); }
+      if (!isPlayer && noseRow <=  9) { hull.add(`${noseRow},9`); hull.add(`${noseRow},10`); }
+    }
+  }
+
+  // ── CARRIER: flight deck protrusion at nose ──────────────────────────────
+  if (archetype === 'CARRIER') {
+    for (let ext = 1; ext <= 2; ext++) {
+      const deckRow = isPlayer ? 10 + hullBase - ext : 9 - hullBase + ext;
+      if (deckRow < 0 || deckRow >= G) continue;
+      if (isPlayer  && deckRow < 10) continue;
+      if (!isPlayer && deckRow >  9) continue;
+      const deckW = Math.max(1, Math.round(maxHalfW * (0.5 - ext * 0.15)));
+      for (let c = 10 - deckW; c <= 9 + deckW; c++)
+        if (c >= 0 && c < G) hull.add(`${deckRow},${c}`);
+    }
+  }
+
+  // ── SAUCER: dome thickening — extra column ring around equator ───────────
+  if (archetype === 'SAUCER' && shipDepth >= 3) {
+    const equatorIdx = Math.floor(shipDepth / 2);
+    for (let di = -1; di <= 1; di++) {
+      const k = equatorIdx + di;
+      if (k < 0 || k >= shipDepth) continue;
+      const row = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer  && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9  || row < 0))  continue;
+      // Ensure full-width equatorial band
+      const eqW = Math.min(9, widths[k] + 1);
+      for (let c = 10 - eqW; c <= 9 + eqW; c++)
+        if (c >= 0 && c < G) hull.add(`${row},${c}`);
+    }
+  }
+
+  // ── HAMMERHEAD: wide cephalofoil at nose ─────────────────────────────────
+  if (archetype === 'HAMMERHEAD') {
+    for (let k = 0; k < Math.min(2, shipDepth); k++) {
+      const row = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer  && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9  || row < 0))  continue;
+      const headW = Math.min(9, Math.round(maxHalfW * 0.85));
+      for (let c = 10 - headW; c <= 9 + headW; c++)
+        if (c >= 0 && c < G) hull.add(`${row},${c}`);
+    }
+  }
+
+  // ── STINGRAY: swept wingtip thickening ───────────────────────────────────
+  if (archetype === 'STINGRAY') {
+    for (const p of unique) {
+      const armI = Math.round(p.depth + depthOffset);
+      if (armI < 0 || armI >= shipDepth) continue;
+      const armRow = isPlayer ? 10 + hullBase + armI : 9 - hullBase - armI;
+      if (isPlayer  && (armRow < 10 || armRow >= G)) continue;
+      if (!isPlayer && (armRow > 9  || armRow < 0))  continue;
+      const tipR = Math.min(G - 1, Math.round(9.5 + p.absCol + 1));
+      const tipL = Math.max(0,     19 - tipR);
+      for (const dRow of [-1, 0, 1]) {
+        const adj = isPlayer ? armRow + dRow : armRow - dRow;
+        if (adj < 0 || adj >= G) continue;
+        if (isPlayer && adj < 10) continue;
+        if (!isPlayer && adj > 9) continue;
+        for (let c = tipL; c <= tipR; c++) hull.add(`${adj},${c}`);
+        for (let c = 19 - tipR; c <= 19 - tipL; c++) hull.add(`${adj},${c}`);
+      }
     }
   }
 
@@ -724,7 +864,7 @@ function randomTroopsForSide(side) {
     add(r, 19 - c);
   }
 
-  const pattern = Math.floor(rng() * 6);
+  const pattern = Math.floor(rng() * 12);
   switch (pattern) {
     case 0: { // FIGHTER: 2-3 troops, tight central cluster
       const dr = Math.floor(rng() * 2);
@@ -763,6 +903,42 @@ function randomTroopsForSide(side) {
       addPair(base,     col);
       addPair(base + 1, col + Math.floor(rng() * 2));
       addPair(base + 2, col - Math.floor(rng() * 2));
+      break;
+    }
+    case 6: { // SAUCER: ultra-wide same-depth troops → flying disc
+      const row = rowStart + 1 + Math.floor(rng() * 2);
+      addPair(row, 17 + Math.floor(rng() * 2));  // absCol 7.5–8.5
+      if (rng() > 0.3) addPair(row, 15);           // extra inner troops
+      break;
+    }
+    case 7: { // STINGRAY: ultra-wide swept delta
+      addPair(rowStart + 1, 10);
+      addPair(rowStart + 2, 13 + Math.floor(rng() * 2));
+      addPair(rowStart + 3, 17 + Math.floor(rng() * 2));  // maxA ≥ 7 → STINGRAY
+      break;
+    }
+    case 8: { // CARRIER: wide AND deep → supercarrier
+      const col = 15 + Math.floor(rng() * 2);  // absCol 5.5–7.5
+      const dep = 3 + Math.floor(rng() * 2);
+      for (let i = 0; i < dep; i++) addPair(rowStart + 1 + i, col);
+      break;
+    }
+    case 9: { // INTERCEPTOR: very long + narrow → sleek needle fuselage
+      const col = 11 + Math.floor(rng() * 1);  // absCol 1.5–2.5
+      const len = 5 + Math.floor(rng() * 2);   // dSpan ≥ 5
+      for (let i = 0; i < len; i++) addPair(rowStart + 1 + i, col);
+      break;
+    }
+    case 10: { // CRUISER: long body, moderate width → battlecruiser
+      const col = 13 + Math.floor(rng() * 2);  // absCol 3.5–4.5
+      const len = 4 + Math.floor(rng() * 2);   // dSpan ≥ 4, aspect < 0.9
+      for (let i = 0; i < len; i++) addPair(rowStart + 1 + i, col);
+      break;
+    }
+    case 11: { // HAMMERHEAD: wide nose narrowing to stern
+      addPair(rowStart + 1, 16 + Math.floor(rng() * 2));  // very wide nose
+      addPair(rowStart + 2, 13 + Math.floor(rng() * 2));  // narrowing...
+      addPair(rowStart + 3, 11 + Math.floor(rng() * 1));  // narrow stern
       break;
     }
   }
