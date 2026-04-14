@@ -179,17 +179,25 @@ function seedFromTroops(troops) {
 //
 // Key design:
 //   • Ship size = troop bounding box + small margins.  1 troop → tiny ship.
-//   • Archetype is derived from geometric relationships of the formation:
-//       SAUCER      – ultra-wide flat (same depth, maxA ≥ 6.5)  → flying disc
-//       STINGRAY    – ultra-wide widening delta (maxA ≥ 7)       → manta ray
+//   • Archetype is derived from geometric relationships of the formation (20 total):
+//       SAUCER      – ultra-wide flat, dSpan=0, maxA ≥ 6.5      → top-view flying plate (circle envW)
+//       STINGRAY    – ultra-wide widening delta, maxA ≥ 7        → manta ray
 //       DELTA       – troops widen with depth                    → B2 / flying-wing delta
-//       DRONE       – few troops, wide lateral spread            → thin spine + arm wings
+//       RAPTOR      – shallow swept wing, deltaScore ≥ 0.65, dSpan=1 → forward-swept wing
+//       DRONE       – same-depth wide lateral spread             → thin spine + arm wings
+//       SLAB        – same-depth, moderate spread                → flat rectangular plate
+//       WEDGE       – inverted-delta, maxA ≥ 5                   → blunt shield front
+//       HAMMERHEAD  – inverted-delta, maxA ≥ 3                   → hammerhead shark
 //       CARRIER     – wide AND deep formation (maxA ≥ 6)         → supercarrier flight deck
 //       WING        – flat wide spread                           → broad flying wing
-//       INTERCEPTOR – very long + narrow (dSpan ≥ 5, maxA < 3)  → sleek needle fuselage
+//       JAVELIN     – ultra-long ultra-thin (dSpan ≥ 7, maxA < 2) → hypersonic needle
+//       INTERCEPTOR – long + narrow (dSpan ≥ 5, maxA < 3)        → sleek needle fuselage
 //       ROCKET      – deep narrow column                         → pencil / rocket
+//       ARROWHEAD   – widest at middle depth (isSymmetricMid)    → diamond lozenge
+//       TEARDROP    – fat nose + long tail (dSpan ≥ 4, aspect ≤ 0.8) → bulbous nose
 //       CRUISER     – long body, moderate width (aspect < 0.9)   → battlecruiser
-//       HAMMERHEAD  – wide nose narrowing to stern               → hammerhead shark
+//       SCORPION    – complex multi-troop cluster (n ≥ 5, dSpan ≥ 2) → wide thorax + stinger
+//       MANTIS      – thin spine + multi-level arm wings          → multi-limbed predator
 //       BOMBER      – moderate width, squat depth                → fat bomber silhouette
 //       FIGHTER     – everything else                            → classic jet with nacelles
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,7 +232,7 @@ function generateHull(troops, side) {
   // ── Archetype detection ──────────────────────────────────────────────────
   // Check delta: troops get progressively wider with depth (B2/triangle)
   let deltaScore = 0;
-  if (n >= 3 && dSpan >= 2) {
+  if (n >= 2 && dSpan >= 1) {
     const sorted  = [...unique].sort((a, b) => a.depth - b.depth);
     let widening  = 0;
     for (let i = 1; i < sorted.length; i++)
@@ -234,7 +242,7 @@ function generateHull(troops, side) {
 
   // Check inverted-delta: troops get progressively narrower with depth (hammerhead / wide nose)
   let invertedDeltaScore = 0;
-  if (n >= 3 && dSpan >= 2) {
+  if (n >= 2 && dSpan >= 1) {
     const sorted   = [...unique].sort((a, b) => a.depth - b.depth);
     let narrowing  = 0;
     for (let i = 1; i < sorted.length; i++)
@@ -242,17 +250,35 @@ function generateHull(troops, side) {
     invertedDeltaScore = narrowing / (sorted.length - 1);
   }
 
+  // Check symmetric-mid: widest troop is at the middle depth → diamond / arrowhead
+  let isSymmetricMid = false;
+  if (n >= 3 && dSpan >= 2) {
+    const sorted = [...unique].sort((a, b) => a.depth - b.depth);
+    const midA   = sorted[Math.floor(sorted.length / 2)].absCol;
+    isSymmetricMid = midA > sorted[0].absCol &&
+                     midA > sorted[sorted.length - 1].absCol &&
+                     midA >= 2;
+  }
+
   let archetype;
   if (n === 1 && maxA < 1.5) {
     archetype = 'ROCKET';                                                     // single narrow troop
+  } else if (dSpan >= 7 && maxA < 2) {
+    archetype = 'JAVELIN';                                                    // ultra-long ultra-thin
   } else if (deltaScore >= 0.65 && dSpan >= 2 && maxA >= 7) {
     archetype = 'STINGRAY';                                                   // ultra-wide manta-ray delta
   } else if (deltaScore >= 0.65 && dSpan >= 2) {
     archetype = 'DELTA';                                                      // widening triangle → B2
+  } else if (deltaScore >= 0.65 && dSpan === 1) {
+    archetype = 'RAPTOR';                                                     // shallow swept wing
   } else if (dSpan === 0 && maxA >= 6.5) {
-    archetype = 'SAUCER';                                                     // ultra-wide flat → flying disc
+    archetype = 'SAUCER';                                                     // ultra-wide flat → top-view flying plate
   } else if (maxA >= 4.0 && dSpan === 0) {
     archetype = 'DRONE';                                                      // same depth + wide → arm drone
+  } else if (dSpan === 0 && n >= 2) {
+    archetype = 'SLAB';                                                       // same-depth moderate spread → flat rectangle
+  } else if (invertedDeltaScore >= 0.65 && dSpan >= 2 && maxA >= 5) {
+    archetype = 'WEDGE';                                                      // wide blunt front → shield/D-shape
   } else if (invertedDeltaScore >= 0.65 && dSpan >= 2 && maxA >= 3) {
     archetype = 'HAMMERHEAD';                                                 // wide nose narrows → hammerhead
   } else if (dSpan >= 3 && maxA >= 6) {
@@ -263,8 +289,16 @@ function generateHull(troops, side) {
     archetype = 'INTERCEPTOR';                                                // very long + narrow → sleek fuselage
   } else if (dSpan >= 3 && maxA <= 2.5) {
     archetype = 'ROCKET';                                                     // deep narrow column
+  } else if (isSymmetricMid && dSpan >= 2) {
+    archetype = 'ARROWHEAD';                                                  // widest at mid depth → diamond lozenge
+  } else if (dSpan >= 4 && maxA >= 3.5 && aspect <= 0.8) {
+    archetype = 'TEARDROP';                                                   // fat nose + streaming tail
   } else if (dSpan >= 4 && maxA >= 2.5 && aspect < 0.9) {
     archetype = 'CRUISER';                                                    // long moderate-width → battlecruiser
+  } else if (n >= 4 && dSpan >= 2 && maxA >= 4) {
+    archetype = 'MANTIS';                                                     // multi-level arm wings → predator
+  } else if (n >= 5 && dSpan >= 2 && maxA >= 2) {
+    archetype = 'SCORPION';                                                   // complex cluster → wide thorax + stinger
   } else if (aspect >= 1.0 && maxA >= 2.5) {
     archetype = 'BOMBER';                                                     // moderate width/depth
   } else {
@@ -273,12 +307,19 @@ function generateHull(troops, side) {
 
   // ── Ship size proportional to formation ─────────────────────────────────
   const noseMargin = 1;
-  const tailMargins = { FIGHTER: 2, BOMBER: 2, WING: 2, ROCKET: 3, DRONE: 1, DELTA: 2, SAUCER: 1, STINGRAY: 2, CARRIER: 2, INTERCEPTOR: 3, CRUISER: 2, HAMMERHEAD: 2 };
-  const sideMargins = { FIGHTER: 2, BOMBER: 2, WING: 1, ROCKET: 1, DRONE: 1, DELTA: 1, SAUCER: 1, STINGRAY: 1, CARRIER: 1, INTERCEPTOR: 1, CRUISER: 2, HAMMERHEAD: 1 };
+  const tailMargins = { FIGHTER: 2, BOMBER: 2, WING: 2, ROCKET: 3, DRONE: 1, DELTA: 2, SAUCER: 1,
+    STINGRAY: 2, CARRIER: 2, INTERCEPTOR: 3, CRUISER: 2, HAMMERHEAD: 2,
+    JAVELIN: 2, RAPTOR: 2, SLAB: 1, WEDGE: 2, ARROWHEAD: 2, TEARDROP: 2, SCORPION: 2, MANTIS: 1 };
+  const sideMargins = { FIGHTER: 2, BOMBER: 2, WING: 1, ROCKET: 1, DRONE: 1, DELTA: 1, SAUCER: 1,
+    STINGRAY: 1, CARRIER: 1, INTERCEPTOR: 1, CRUISER: 2, HAMMERHEAD: 1,
+    JAVELIN: 1, RAPTOR: 1, SLAB: 2, WEDGE: 1, ARROWHEAD: 2, TEARDROP: 2, SCORPION: 2, MANTIS: 1 };
   const tailMargin  = tailMargins[archetype] || 2;
   const sideMargin  = sideMargins[archetype] || 2;
-  const shipDepth   = Math.min(9, Math.max(3, dSpan + noseMargin + tailMargin));
   const maxHalfW    = Math.min(9, Math.max(1, Math.ceil(maxA) + sideMargin));
+  // SAUCER: override depth to be roughly equal to width → circular top-view plate
+  const shipDepth   = (archetype === 'SAUCER')
+    ? Math.min(9, Math.max(5, maxHalfW))
+    : Math.min(9, Math.max(3, dSpan + noseMargin + tailMargin));
 
   // depthOffset: shifts formation depths so minD maps to noseMargin index
   const depthOffset = noseMargin - minD;
@@ -317,9 +358,11 @@ function generateHull(troops, side) {
         // Razor point → steadily sweeps to a broad trailing delta edge (B2)
         if (t < 0.10) return t / 0.10 * 0.12;
         return 0.12 + (t - 0.10) / 0.90 * 0.88;
-      case 'SAUCER':
-        // Flying disc: smooth sinusoidal lens – narrow rim, wide equator
-        return Math.sin(t * Math.PI) * 0.70 + 0.30;
+      case 'SAUCER': {
+        // Top-view flying plate: circular profile — zero at rim, full at equator
+        const tNorm = 2 * t - 1;  // −1 at nose, 0 at equator, +1 at tail
+        return Math.sqrt(Math.max(0, 1 - tNorm * tNorm)) * 0.85 + 0.15;
+      }
       case 'STINGRAY':
         // Manta ray: razor tip → fast curving sweep to ultra-wide trailing edge
         if (t < 0.05) return t / 0.05 * 0.10;
@@ -345,8 +388,43 @@ function generateHull(troops, side) {
         if (t < 0.18) return 1.00 - (t / 0.18) * 0.50;
         if (t < 0.50) return 0.50 - (t - 0.18) / 0.32 * 0.25;
         return 0.25 + (t - 0.50) / 0.50 * 0.75;
-      default:
-        return 0.5;
+      case 'JAVELIN':
+        // Hyper-thin needle: barely a sliver with tiny end flares
+        if (t < 0.07) return t / 0.07 * 0.14;
+        if (t > 0.93) return (1 - t) / 0.07 * 0.14;
+        return 0.05;
+      case 'RAPTOR':
+        // Broad flat leading edge sweeps to full, gentle trailing taper
+        if (t < 0.14) return 0.55 + t / 0.14 * 0.45;
+        if (t < 0.68) return 1.00;
+        return 1.00 - (t - 0.68) / 0.32 * 0.58;
+      case 'SLAB':
+        // Flat rectangle: uniform width, small corner rounding
+        if (t < 0.14) return 0.30 + t / 0.14 * 0.70;
+        if (t < 0.86) return 1.00;
+        return 1.00 - (t - 0.86) / 0.14 * 0.55;
+      case 'WEDGE':
+        // Wide blunt prow, steadily tapers to a narrow stern (D / shield shape)
+        if (t < 0.08) return 0.84 + t / 0.08 * 0.16;
+        if (t < 0.38) return 1.00 - (t - 0.08) / 0.30 * 0.06;
+        return 0.94 - (t - 0.38) / 0.62 * 0.82;
+      case 'ARROWHEAD':
+        // Diamond lozenge: sharp front point → max at mid → sharp aft point
+        if (t < 0.44) return t / 0.44;
+        return 1.00 - (t - 0.44) / 0.56;
+      case 'TEARDROP':
+        // Bulbous rounded nose, very long streaming narrow tail
+        if (t < 0.20) return 0.12 + t / 0.20 * 0.88;
+        return 1.00 - Math.pow((t - 0.20) / 0.80, 0.55) * 0.92;
+      case 'SCORPION':
+        // Small nip at nose, swells to wide thorax, narrows abdomen, tiny stinger tail
+        if (t < 0.10) return 0.18 + t / 0.10 * 0.30;
+        if (t < 0.42) return 0.48 + (t - 0.10) / 0.32 * 0.52;
+        if (t < 0.72) return 1.00 - (t - 0.42) / 0.30 * 0.76;
+        return 0.24 - (t - 0.72) / 0.28 * 0.18;
+      case 'MANTIS':
+        // Ultra-thin central spine (arms handled in post-processing like DRONE but multi-level)
+        return 0.07;
     }
   }
 
@@ -508,6 +586,42 @@ function generateHull(troops, side) {
         for (let c = tipL; c <= tipR; c++) hull.add(`${adj},${c}`);
         for (let c = 19 - tipR; c <= 19 - tipL; c++) hull.add(`${adj},${c}`);
       }
+    }
+  }
+
+  // ── JAVELIN: sharp single-cell nose spike ────────────────────────────────
+  if (archetype === 'JAVELIN') {
+    const noseRow = isPlayer ? 10 + hullBase - 1 : 9 - hullBase + 1;
+    if (noseRow >= 0 && noseRow < G) {
+      if (isPlayer  && noseRow >= 10) { hull.add(`${noseRow},9`); hull.add(`${noseRow},10`); }
+      if (!isPlayer && noseRow <=  9) { hull.add(`${noseRow},9`); hull.add(`${noseRow},10`); }
+    }
+  }
+
+  // ── SCORPION: stinger tail extension (2 narrow cells beyond hull stern) ──
+  if (archetype === 'SCORPION') {
+    for (let ext = 0; ext <= 1; ext++) {
+      const stingRow = isPlayer ? 10 + hullBase + shipDepth + ext : 9 - hullBase - shipDepth - ext;
+      if (stingRow < 0 || stingRow >= G) continue;
+      if (isPlayer  && stingRow < 10) continue;
+      if (!isPlayer && stingRow >  9) continue;
+      hull.add(`${stingRow},9`); hull.add(`${stingRow},10`);
+    }
+  }
+
+  // ── MANTIS: multi-level arm wings at each troop depth (like DRONE per level)
+  if (archetype === 'MANTIS') {
+    for (const p of unique) {
+      if (p.absCol < 3) continue;                           // only extend outer-arm troops
+      const armI = Math.round(p.depth + depthOffset);
+      if (armI < 0 || armI >= shipDepth) continue;
+      const armRow = isPlayer ? 10 + hullBase + armI : 9 - hullBase - armI;
+      if (isPlayer  && (armRow < 10 || armRow >= G)) continue;
+      if (!isPlayer && (armRow > 9  || armRow < 0))  continue;
+      const armR = Math.min(G - 1, Math.round(9.5 + p.absCol + 1));
+      const armL = Math.max(0,     19 - armR);
+      for (let c = armL;     c <= armR;     c++) hull.add(`${armRow},${c}`);
+      for (let c = 19-armR;  c <= 19-armL;  c++) hull.add(`${armRow},${c}`);
     }
   }
 
@@ -864,7 +978,7 @@ function randomTroopsForSide(side) {
     add(r, 19 - c);
   }
 
-  const pattern = Math.floor(rng() * 12);
+  const pattern = Math.floor(rng() * 20);
   switch (pattern) {
     case 0: { // FIGHTER: 2-3 troops, tight central cluster
       const dr = Math.floor(rng() * 2);
@@ -939,6 +1053,57 @@ function randomTroopsForSide(side) {
       addPair(rowStart + 1, 16 + Math.floor(rng() * 2));  // very wide nose
       addPair(rowStart + 2, 13 + Math.floor(rng() * 2));  // narrowing...
       addPair(rowStart + 3, 11 + Math.floor(rng() * 1));  // narrow stern
+      break;
+    }
+    case 12: { // JAVELIN: ultra-long ultra-thin (dSpan=7, maxA=1.5 → JAVELIN)
+      for (let i = 0; i < 8; i++) addPair(rowStart + 1 + i, 11);
+      break;
+    }
+    case 13: { // RAPTOR: shallow swept wing (deltaScore=1.0, dSpan=1)
+      addPair(rowStart + 1, 10);
+      addPair(rowStart + 2, 14 + Math.floor(rng() * 3));
+      break;
+    }
+    case 14: { // SLAB: same-depth, moderate spread (dSpan=0, 1.5≤maxA<4)
+      const col = 12 + Math.floor(rng() * 2);  // absCol 2.5–3.5
+      addPair(rowStart + 1 + Math.floor(rng() * 2), col);
+      break;
+    }
+    case 15: { // WEDGE: wide nose narrowing (invertedDelta=1.0, maxA≥5.5)
+      addPair(rowStart + 1, 15);
+      addPair(rowStart + 2, 12 + Math.floor(rng() * 2));
+      addPair(rowStart + 3, 10);
+      break;
+    }
+    case 16: { // ARROWHEAD: narrow front, wide mid, narrow back (isSymmetricMid)
+      addPair(rowStart + 1, 10);
+      addPair(rowStart + 2, 13 + Math.floor(rng() * 2));
+      addPair(rowStart + 3, 10);
+      break;
+    }
+    case 17: { // TEARDROP: fat nose, streaming tail (dSpan=5, maxA=3.5, aspect=0.7)
+      addPair(rowStart + 1, 13);
+      addPair(rowStart + 2, 13);
+      addPair(rowStart + 3, 13);
+      addPair(rowStart + 4, 12);
+      addPair(rowStart + 5, 11);
+      addPair(rowStart + 6, 10);
+      break;
+    }
+    case 18: { // SCORPION: complex multi-troop (n≥5, dSpan≥2, maxA≥2 → SCORPION)
+      addPair(rowStart + 1, 13);
+      addPair(rowStart + 2, 13);
+      addPair(rowStart + 2, 11);
+      addPair(rowStart + 3, 12);
+      addPair(rowStart + 4, 10);
+      break;
+    }
+    case 19: { // MANTIS: multi-arm at different depths (n≥4, dSpan≥2, maxA≥4)
+      addPair(rowStart + 1, 14);
+      addPair(rowStart + 3, 15);
+      addPair(rowStart + 5, 14);
+      add(rowStart + 2, 9);
+      add(rowStart + 4, 9);
       break;
     }
   }
