@@ -97,7 +97,7 @@ button:hover { border-color: #3a6a8a; color: #aaccdd; }
   </div>
 </div>
 <div id="info">
-  Click bottom half to place/remove troops · troops auto-mirror for symmetry<br>
+  Click bottom half to place/remove troops freely · shadow stays symmetrical<br>
   Ship silhouette updates live · colored modules fill interior spaces
 </div>
 
@@ -691,16 +691,12 @@ canvas.addEventListener('mousedown', e => {
   if (c < 0 || c >= G || r < 0 || r >= G) return;
 
   if (r >= 10) {
-    // Player half
-    const key  = `${r},${c}`;
-    const mirC = 19 - c;
-    const mirK = `${r},${mirC}`;
+    // Player half – free placement, no forced mirror
+    const key = `${r},${c}`;
     if (playerTroops.has(key)) {
       playerTroops.delete(key);
-      playerTroops.delete(mirK);
     } else {
       playerTroops.add(key);
-      playerTroops.add(mirK);
     }
     regen();
   } else {
@@ -720,48 +716,53 @@ function randomTroopsForSide(side) {
   function add(r, c) {
     if (r < 0 || r >= G || c < 0 || c >= G) return;
     troops.add(`${r},${c}`);
-    troops.add(`${r},${19 - c}`);
+  }
+
+  // addPair: places troop at (r,c) and its mirror at (r, 19-c)
+  function addPair(r, c) {
+    add(r, c);
+    add(r, 19 - c);
   }
 
   const pattern = Math.floor(rng() * 6);
   switch (pattern) {
     case 0: { // FIGHTER: 2-3 troops, tight central cluster
       const dr = Math.floor(rng() * 2);
-      add(rowStart + 1 + dr,          10 + Math.floor(rng() * 2));
-      add(rowStart + 2 + dr,          11 + Math.floor(rng() * 2));
+      addPair(rowStart + 1 + dr,   10 + Math.floor(rng() * 2));
+      addPair(rowStart + 2 + dr,   11 + Math.floor(rng() * 2));
       if (rng() > 0.5)
-        add(rowStart + 3 + dr,        12 + Math.floor(rng() * 2));
+        addPair(rowStart + 3 + dr, 12 + Math.floor(rng() * 2));
       break;
     }
-    case 1: { // DRONE: 2 wide troops at same depth → arm drone
+    case 1: { // DRONE: wide troops at same depth → arm drone
       const d = Math.floor(rng() * 3);
-      add(rowStart + 2 + d, 14 + Math.floor(rng() * 3));  // one far-out pair
+      addPair(rowStart + 2 + d, 14 + Math.floor(rng() * 3));
       break;
     }
     case 2: { // DELTA / B2: triangle widening with depth
-      add(rowStart + 1, 10);
-      add(rowStart + 2, 11 + Math.floor(rng() * 2));
-      add(rowStart + 3, 13 + Math.floor(rng() * 2));
+      addPair(rowStart + 1, 10);
+      addPair(rowStart + 2, 11 + Math.floor(rng() * 2));
+      addPair(rowStart + 3, 13 + Math.floor(rng() * 2));
       break;
     }
     case 3: { // ROCKET: narrow vertical column
-      const c = 10 + Math.floor(rng() * 2);
+      const col = 10 + Math.floor(rng() * 2);
       const len = 3 + Math.floor(rng() * 4);
-      for (let i = 0; i < len; i++) add(rowStart + 1 + i, c);
+      for (let i = 0; i < len; i++) addPair(rowStart + 1 + i, col);
       break;
     }
-    case 4: { // WING: 2 wide troops at different depths → swept flying wing
+    case 4: { // WING: wide troops at different depths → swept flying wing
       const d = Math.floor(rng() * 2);
-      add(rowStart + 1 + d, 15 + Math.floor(rng() * 3));
-      add(rowStart + 2 + d, 13 + Math.floor(rng() * 2));
+      addPair(rowStart + 1 + d, 15 + Math.floor(rng() * 3));
+      addPair(rowStart + 2 + d, 13 + Math.floor(rng() * 2));
       break;
     }
-    case 5: { // BOMBER: 3 troops stacked in a column → wide, squat silhouette
+    case 5: { // BOMBER: troops at medium width, squat silhouette
       const base = rowStart + 1 + Math.floor(rng() * 2);
       const col  = 12 + Math.floor(rng() * 2);
-      add(base,     col);
-      add(base + 1, col + Math.floor(rng() * 2));
-      add(base + 2, col - Math.floor(rng() * 2));
+      addPair(base,     col);
+      addPair(base + 1, col + Math.floor(rng() * 2));
+      addPair(base + 2, col - Math.floor(rng() * 2));
       break;
     }
   }
