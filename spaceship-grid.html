@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spaceship Grid – Visual Prototype</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #06060e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  font-family: 'Courier New', monospace;
+  color: #8899aa;
+  padding: 20px 0 30px;
+  user-select: none;
+}
+h1 {
+  font-size: 13px;
+  letter-spacing: 4px;
+  color: #334455;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+#wrap {
+  position: relative;
+  display: inline-block;
+  margin: 6px 0;
+}
+canvas {
+  display: block;
+  cursor: crosshair;
+  image-rendering: pixelated;
+}
+.controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+button {
+  background: #0d0d1a;
+  color: #667788;
+  border: 1px solid #1e2a3a;
+  padding: 6px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+button:hover { border-color: #3a6a8a; color: #aaccdd; }
+#info {
+  margin-top: 10px;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #2a4455;
+  text-align: center;
+  line-height: 1.8;
+}
+#archetypes {
+  display: flex;
+  gap: 20px;
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.arch-label { text-align: center; }
+.arch-label span { display: block; }
+.arch-label .name { font-size: 13px; letter-spacing: 3px; }
+#enemy-arch .name { color: #cc4444; }
+#player-arch .name { color: #44aacc; }
+</style>
+</head>
+<body>
+<h1>Spaceship Grid · Visual Prototype</h1>
+<div id="wrap"><canvas id="canvas"></canvas></div>
+<div class="controls">
+  <button onclick="randomizePlayer()">⟳ Randomize Player</button>
+  <button onclick="randomizeEnemy()">⟳ Randomize Enemy</button>
+  <button onclick="clearPlayer()">✕ Clear Player</button>
+  <button onclick="clearAll()">✕ Clear All</button>
+</div>
+<div id="archetypes">
+  <div class="arch-label" id="enemy-arch">
+    <span class="name" id="enemy-arch-name">–</span>
+    <span style="color:#334455">ENEMY</span>
+  </div>
+  <div class="arch-label" id="player-arch">
+    <span class="name" id="player-arch-name">–</span>
+    <span style="color:#334455">PLAYER</span>
+  </div>
+</div>
+<div id="info">
+  Click bottom half to place/remove troops · troops auto-mirror for symmetry<br>
+  Ship silhouette updates live · colored modules fill interior spaces
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+const G   = 20;          // grid size 20×20
+const CS  = 34;          // cell size in pixels
+const CW  = G * CS;
+const CH  = G * CS;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE / COLOR PALETTE
+// ─────────────────────────────────────────────────────────────────────────────
+const C = {
+  bg:        '#06060e',
+  gridLine:  '#0e1018',
+  gridX:     '#0b0c14',
+  hull:      '#0a0a0d',
+  hullEdge:  '#111116',
+  divider:   '#1a3040',
+  troop:     '#ffffff',
+  troopGlow: 'rgba(255,255,255,0.15)',
+  // Modules
+  cockpit:   '#d4aa00',   // yellow
+  weapon:    '#9922cc',   // purple
+  reactor:   '#119944',   // green
+  intake:    '#00bbcc',   // cyan
+  thruster:  '#e06600',   // orange
+  engine:    '#cc1111',   // red
+  wing:      '#1155bb',   // blue
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARCHETYPE PROFILES  (index 0 = nose row, index 9 = tail row)
+// half-width in grid cells; ship spans cols (10-w … 9+w) = 2w cols
+// ─────────────────────────────────────────────────────────────────────────────
+const PROFILES = {
+  FIGHTER: {
+    widths:  [1, 1, 2, 3, 5, 4, 3, 2, 3, 3],
+    // extra nacelle pairs: [noseIdx, colsOutside, rowCount]
+    nacelles: [{ idx: 7, offset: 2, depth: 2 }],
+  },
+  BOMBER:  {
+    widths:  [2, 3, 4, 6, 8, 7, 5, 5, 5, 5],
+    nacelles: [],
+  },
+  WING:    {
+    widths:  [1, 2, 5, 8, 9, 9, 7, 4, 3, 3],
+    nacelles: [],
+  },
+  ROCKET:  {
+    widths:  [1, 1, 1, 1, 2, 2, 2, 2, 1, 2],
+    nacelles: [{ idx: 8, offset: 1, depth: 2 }],
+  },
+  DRONE:   {
+    widths:  [2, 3, 4, 5, 5, 5, 4, 4, 4, 4],
+    nacelles: [{ idx: 6, offset: 2, depth: 3 }],
+  },
+};
+const ARCHETYPE_NAMES = ['FIGHTER','BOMBER','WING','ROCKET','DRONE'];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+let playerTroops = new Set(); // "r,c"
+let enemyTroops  = new Set();
+let playerHull   = new Set();
+let enemyHull    = new Set();
+let playerArch   = 'FIGHTER';
+let enemyArch    = 'FIGHTER';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CANVAS SETUP
+// ─────────────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+canvas.width  = CW;
+canvas.height = CH;
+const ctx = canvas.getContext('2d');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEEDED RNG
+// ─────────────────────────────────────────────────────────────────────────────
+function makeRng(seed) {
+  let s = (seed >>> 0) || 0xdeadbeef;
+  return () => {
+    s = Math.imul(s ^ (s >>> 17), 0xbf324c81) >>> 0;
+    s = Math.imul(s ^ (s >>> 13), 0x9e3779b9) >>> 0;
+    s ^= s >>> 16;
+    return (s >>> 0) / 0x100000000;
+  };
+}
+
+function seedFromTroops(troops) {
+  let s = 0x12345678;
+  for (const k of [...troops].sort()) {
+    const [r, c] = k.split(',').map(Number);
+    s = Math.imul(s ^ (r * 997 + c * 1009), 0x6c62272e) | 0;
+  }
+  return s >>> 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARCHETYPE DETECTION
+// ─────────────────────────────────────────────────────────────────────────────
+function detectArchetype(troops) {
+  if (!troops.size) return 'FIGHTER';
+  const pos = [...troops].map(k => k.split(',').map(Number));
+  const cols = pos.map(p => p[1]);
+  const rows = pos.map(p => p[0]);
+  const minC = Math.min(...cols), maxC = Math.max(...cols);
+  const minR = Math.min(...rows), maxR = Math.max(...rows);
+  const spread = maxC - minC;
+  const depth  = maxR - minR;
+  const count  = troops.size;
+  if (spread >= 14)                     return 'WING';
+  if (spread >= 9)                      return 'BOMBER';
+  if (depth >= 6 && spread <= 4)        return 'ROCKET';
+  if (count >= 8 && spread <= 7)        return 'DRONE';
+  return 'FIGHTER';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HULL GENERATION
+// side: 'player' (rows 10-19, nose=row10) | 'enemy' (rows 0-9, nose=row9)
+// ─────────────────────────────────────────────────────────────────────────────
+function generateHull(troops, side) {
+  const isPlayer = side === 'player';
+  const archetype = detectArchetype(troops);
+
+  const rng = makeRng(seedFromTroops(troops) ^ (isPlayer ? 0xAAAA : 0x5555));
+
+  const prof   = PROFILES[archetype];
+  const widths = prof.widths.map(w =>
+    Math.max(1, Math.min(9, w + Math.round((rng() - 0.5) * 2)))
+  );
+
+  // Troop influence: wide troops → broader wings; deep troops → thicker body
+  if (troops.size > 0) {
+    const pos    = [...troops].map(k => k.split(',').map(Number));
+    const cols   = pos.map(p => p[1]);
+    const minC   = Math.min(...cols), maxC = Math.max(...cols);
+    const spread = maxC - minC;
+    const boost  = Math.floor(spread / 5);
+    for (let i = 2; i <= 6; i++)
+      widths[i] = Math.min(9, widths[i] + boost);
+
+    // Dense center troops → sharpen nose
+    const centerTroops = pos.filter(([, c]) => c >= 8 && c <= 11).length;
+    if (centerTroops >= 2) widths[0] = Math.max(1, widths[0] - 1);
+  }
+
+  const hull = new Set();
+
+  for (let i = 0; i < 10; i++) {
+    const row = isPlayer ? 10 + i : 9 - i;
+    const w   = widths[i];
+
+    // Main body band (symmetric around col 9.5)
+    for (let c = 10 - w; c <= 9 + w; c++) hull.add(`${row},${c}`);
+
+    // Nacelle pods
+    for (const nac of prof.nacelles) {
+      if (i >= nac.idx && i < nac.idx + nac.depth) {
+        const lo = 10 - widths[nac.idx] - nac.offset;
+        const hi = 9  + widths[nac.idx] + nac.offset;
+        if (lo >= 0)     hull.add(`${row},${lo}`);
+        if (hi < G)      hull.add(`${row},${hi}`);
+        if (lo - 1 >= 0) hull.add(`${row},${lo - 1}`);
+        if (hi + 1 < G)  hull.add(`${row},${hi + 1}`);
+      }
+    }
+  }
+
+  return { hull, archetype };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HULL NEIGHBOR HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+function inHull(r, c, hull) { return hull.has(`${r},${c}`); }
+
+// For each cell, compute which of the 4 triangle sectors to fill.
+// Rule: fill a triangle if the neighbor in that direction is ALSO in the hull.
+// This naturally creates: pointed nose, swept wing tips, engine nozzle splits.
+function getSectors(r, c, hull) {
+  return {
+    top:    inHull(r - 1, c, hull),
+    right:  inHull(r, c + 1, hull),
+    bottom: inHull(r + 1, c, hull),
+    left:   inHull(r, c - 1, hull),
+  };
+}
+
+function isInterior(r, c, hull) {
+  return inHull(r-1,c,hull) && inHull(r+1,c,hull) &&
+         inHull(r,c-1,hull) && inHull(r,c+1,hull);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRIANGLE DRAWING PRIMITIVES
+// ─────────────────────────────────────────────────────────────────────────────
+function tri(cx, cy, dir, color, inset) {
+  const x = cx * CS, y = cy * CS;
+  const p = inset || 0;
+  const mx = x + CS / 2, my = y + CS / 2;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  switch (dir) {
+    case 'top':
+      ctx.moveTo(x + p,      y + p);
+      ctx.lineTo(x + CS - p, y + p);
+      ctx.lineTo(mx,         my - p);
+      break;
+    case 'right':
+      ctx.moveTo(x + CS - p, y + p);
+      ctx.lineTo(x + CS - p, y + CS - p);
+      ctx.lineTo(mx + p,     my);
+      break;
+    case 'bottom':
+      ctx.moveTo(x + CS - p, y + CS - p);
+      ctx.lineTo(x + p,      y + CS - p);
+      ctx.lineTo(mx,         my + p);
+      break;
+    case 'left':
+      ctx.moveTo(x + p,      y + CS - p);
+      ctx.lineTo(x + p,      y + p);
+      ctx.lineTo(mx - p,     my);
+      break;
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Draw all four sectors of a hull cell in the hull color
+function drawHullCell(c, r, sectors) {
+  const hc = C.hull;
+  const he = C.hullEdge;
+  // Fill each active sector; inactive sectors stay as background
+  if (sectors.top)    tri(c, r, 'top',    hc);
+  if (sectors.right)  tri(c, r, 'right',  hc);
+  if (sectors.bottom) tri(c, r, 'bottom', hc);
+  if (sectors.left)   tri(c, r, 'left',   hc);
+
+  // Always fill the center pixel area so no gaps appear at apex junctions
+  const cx = c * CS + CS / 2 - 2, cy = r * CS + CS / 2 - 2;
+  ctx.fillStyle = hc;
+  ctx.fillRect(cx, cy, 4, 4);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE COLOR ASSIGNMENT
+// noseProgress: 0 = nose row, 1 = tail row
+// colDist:      0 = center axis, 1 = edge
+// ─────────────────────────────────────────────────────────────────────────────
+function moduleColors(noseProgress, colDist) {
+  // Forward-facing sector (cockpit / sensors)
+  let nose;
+  if (noseProgress < 0.15) nose = C.cockpit;
+  else if (noseProgress < 0.45) nose = C.weapon;
+  else nose = C.reactor;
+
+  // Rear-facing sector (propulsion)
+  let tail;
+  if (noseProgress > 0.82) tail = C.engine;
+  else if (noseProgress > 0.62) tail = C.thruster;
+  else if (noseProgress > 0.4)  tail = C.reactor;
+  else tail = C.weapon;
+
+  // Side sectors (wing hardware / intakes)
+  let side;
+  if (colDist < 0.25)      side = C.reactor;
+  else if (colDist < 0.55) side = noseProgress < 0.5 ? C.weapon  : C.reactor;
+  else if (colDist < 0.8)  side = noseProgress < 0.5 ? C.intake  : C.thruster;
+  else                     side = C.wing;
+
+  return { nose, tail, side };
+}
+
+function drawModuleCell(c, r, side) {
+  const isPlayer   = side === 'player';
+  const noseRow    = isPlayer ? 10 : 9;
+  const tailRow    = isPlayer ? 19 :  0;
+  const noseP      = isPlayer ? (r - noseRow) / 9 : (noseRow - r) / 9;
+  const colDist    = Math.abs(c - 9.5) / 9.5;
+  const mc         = moduleColors(Math.max(0, Math.min(1, noseP)), colDist);
+
+  // For player: "nose-facing" sector = top; "tail-facing" = bottom
+  // For enemy:  "nose-facing" sector = bottom; "tail-facing" = top
+  const noseDir  = isPlayer ? 'top'    : 'bottom';
+  const tailDir  = isPlayer ? 'bottom' : 'top';
+
+  const pad = 4; // inset so the dark X lines show between modules
+  tri(c, r, noseDir, mc.nose,  pad);
+  tri(c, r, tailDir, mc.tail,  pad);
+  tri(c, r, 'left',  mc.side,  pad);
+  tri(c, r, 'right', mc.side,  pad);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TROOP MARKER
+// ─────────────────────────────────────────────────────────────────────────────
+function drawTroopMarker(c, r, side) {
+  const x = c * CS + CS / 2;
+  const y = r * CS + CS / 2;
+  const isPlayer = side === 'player';
+
+  // Glow
+  const grd = ctx.createRadialGradient(x, y, 1, x, y, CS * 0.45);
+  grd.addColorStop(0, isPlayer ? 'rgba(80,180,255,0.35)' : 'rgba(255,80,80,0.35)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, CS * 0.45, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Center dot
+  ctx.fillStyle = isPlayer ? '#88ccff' : '#ff8888';
+  ctx.beginPath();
+  ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Cross reticle
+  ctx.strokeStyle = isPlayer ? 'rgba(100,200,255,0.7)' : 'rgba(255,100,100,0.7)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y);
+  ctx.moveTo(x, y - 7); ctx.lineTo(x, y + 7);
+  ctx.stroke();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────────────────────────────────────
+function render() {
+  // ── Background ──────────────────────────────────────────────
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, CW, CH);
+
+  // ── Grid lines ───────────────────────────────────────────────
+  ctx.strokeStyle = C.gridLine;
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= G; i++) {
+    ctx.beginPath(); ctx.moveTo(i * CS, 0);  ctx.lineTo(i * CS, CH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * CS);  ctx.lineTo(CW, i * CS); ctx.stroke();
+  }
+
+  // ── Faint X diagonals across entire grid ────────────────────
+  ctx.strokeStyle = C.gridX;
+  ctx.lineWidth = 0.3;
+  for (let r = 0; r < G; r++) {
+    for (let c = 0; c < G; c++) {
+      const x = c * CS, y = r * CS;
+      ctx.beginPath();
+      ctx.moveTo(x, y);      ctx.lineTo(x + CS, y + CS);
+      ctx.moveTo(x + CS, y); ctx.lineTo(x, y + CS);
+      ctx.stroke();
+    }
+  }
+
+  // ── Half-zone tints ─────────────────────────────────────────
+  ctx.fillStyle = 'rgba(180,40,40,0.025)';
+  ctx.fillRect(0, 0, CW, 10 * CS);
+  ctx.fillStyle = 'rgba(40,120,180,0.025)';
+  ctx.fillRect(0, 10 * CS, CW, 10 * CS);
+
+  // ── HULL PASS 1 — draw hull sectors (triangle fill rule) ────
+  for (const key of enemyHull) {
+    const [r, c] = key.split(',').map(Number);
+    drawHullCell(c, r, getSectors(r, c, enemyHull));
+  }
+  for (const key of playerHull) {
+    const [r, c] = key.split(',').map(Number);
+    drawHullCell(c, r, getSectors(r, c, playerHull));
+  }
+
+  // ── HULL PASS 2 — colored interior modules ──────────────────
+  for (const key of enemyHull) {
+    const [r, c] = key.split(',').map(Number);
+    if (isInterior(r, c, enemyHull) && !enemyTroops.has(key)) {
+      // draw X dividers first (black lines on top of hull, then colored inset)
+      const x = c * CS, y = r * CS;
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + CS, y + CS);
+      ctx.moveTo(x + CS, y); ctx.lineTo(x, y + CS);
+      ctx.stroke();
+      drawModuleCell(c, r, 'enemy');
+    }
+  }
+  for (const key of playerHull) {
+    const [r, c] = key.split(',').map(Number);
+    if (isInterior(r, c, playerHull) && !playerTroops.has(key)) {
+      const x = c * CS, y = r * CS;
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + CS, y + CS);
+      ctx.moveTo(x + CS, y); ctx.lineTo(x, y + CS);
+      ctx.stroke();
+      drawModuleCell(c, r, 'player');
+    }
+  }
+
+  // ── Troop markers ────────────────────────────────────────────
+  for (const key of enemyTroops) {
+    const [r, c] = key.split(',').map(Number);
+    drawTroopMarker(c, r, 'enemy');
+  }
+  for (const key of playerTroops) {
+    const [r, c] = key.split(',').map(Number);
+    drawTroopMarker(c, r, 'player');
+  }
+
+  // ── Center divider ───────────────────────────────────────────
+  ctx.strokeStyle = C.divider;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath();
+  ctx.moveTo(0, 10 * CS); ctx.lineTo(CW, 10 * CS);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Divider label
+  ctx.fillStyle = '#1a3040';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('-- BATTLE LINE --', CW / 2, 10 * CS - 3);
+
+  // ── Zone labels ───────────────────────────────────────────────
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = '#1a1a2a';
+  ctx.textAlign = 'left';
+  ctx.fillText('ENEMY', 4, 12);
+  ctx.textAlign = 'right';
+  ctx.fillText('PLAYER', CW - 4, CH - 4);
+  ctx.textAlign = 'left';
+
+  // ── Archetype display ─────────────────────────────────────────
+  document.getElementById('enemy-arch-name').textContent  = enemyArch;
+  document.getElementById('player-arch-name').textContent = playerArch;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGENERATE BOTH SHIPS
+// ─────────────────────────────────────────────────────────────────────────────
+function regen() {
+  const p = generateHull(playerTroops, 'player');
+  const e = generateHull(enemyTroops,  'enemy');
+  playerHull  = p.hull;  playerArch  = p.archetype;
+  enemyHull   = e.hull;  enemyArch   = e.archetype;
+  render();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TROOP PLACEMENT INTERACTION
+// Mirror: placing at (r, c) also places at (r, 19-c) within the same half
+// ─────────────────────────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  // Scale to canvas coords (in case CSS scales the element)
+  const scaleX = CW / rect.width;
+  const scaleY = CH / rect.height;
+  const c = Math.floor(mx * scaleX / CS);
+  const r = Math.floor(my * scaleY / CS);
+  if (c < 0 || c >= G || r < 0 || r >= G) return;
+
+  if (r >= 10) {
+    // Player half
+    const key  = `${r},${c}`;
+    const mirC = 19 - c;
+    const mirK = `${r},${mirC}`;
+    if (playerTroops.has(key)) {
+      playerTroops.delete(key);
+      playerTroops.delete(mirK);
+    } else {
+      playerTroops.add(key);
+      playerTroops.add(mirK);
+    }
+    regen();
+  } else {
+    // Enemy half — clicking enemy side has no effect in this prototype
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUTTON ACTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+function randomTroopsForSide(side) {
+  const rng  = makeRng(Date.now() & 0x7fffffff);
+  const troops = new Set();
+  const count  = 3 + Math.floor(rng() * 6); // 3–8 troops per side (right half)
+  const rowStart = side === 'player' ? 10 : 0;
+  const rowEnd   = side === 'player' ? 19 : 9;
+
+  for (let i = 0; i < count; i++) {
+    const r = rowStart + Math.floor(rng() * (rowEnd - rowStart + 1));
+    const c = 10 + Math.floor(rng() * 8); // right half (10-17), mirror handles left
+    troops.add(`${r},${c}`);
+    troops.add(`${r},${19 - c}`);  // auto-mirror
+  }
+  return troops;
+}
+
+function randomizePlayer() {
+  playerTroops = randomTroopsForSide('player');
+  regen();
+}
+function randomizeEnemy() {
+  enemyTroops = randomTroopsForSide('enemy');
+  regen();
+}
+function clearPlayer() {
+  playerTroops.clear();
+  regen();
+}
+function clearAll() {
+  playerTroops.clear();
+  enemyTroops.clear();
+  regen();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INITIAL STATE — seed both ships with default troop layouts
+// ─────────────────────────────────────────────────────────────────────────────
+(function init() {
+  // Default player formation: a mid-spread fighter layout
+  [
+    [12,11],[12,8],[13,12],[13,7],[14,13],[14,6],[15,11],[15,8]
+  ].forEach(([r,c]) => {
+    playerTroops.add(`${r},${c}`);
+    playerTroops.add(`${r},${19-c}`);
+  });
+
+  // Default enemy formation: a wide wing/bomber layout
+  [
+    [5,10],[5,9],[6,12],[6,7],[7,13],[7,6],[4,11],[4,8]
+  ].forEach(([r,c]) => {
+    enemyTroops.add(`${r},${c}`);
+    enemyTroops.add(`${r},${19-c}`);
+  });
+
+  regen();
+})();
+</script>
+</body>
+</html>
