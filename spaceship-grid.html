@@ -255,6 +255,9 @@ function generateHull(troops, side) {
 
   // depthOffset: shifts formation depths so minD maps to noseMargin index
   const depthOffset = noseMargin - minD;
+  // hullBase: grid-row offset so the hull nose sits noseMargin rows above the
+  // shallowest troop – this guarantees every troop lands inside the hull
+  const hullBase = minD - noseMargin;
 
   // ── Width envelope (t=0 nose, t=1 tail) → multiplier 0..1 ──────────────
   function envW(t) {
@@ -293,20 +296,33 @@ function generateHull(troops, side) {
   }
 
   // ── Build per-row widths ─────────────────────────────────────────────────
+  // First pass: for each hull row index, record the minimum half-width needed
+  // to cover the troops mapped to that row (so no troop ever falls outside).
+  const minWidthForRow = new Array(shipDepth).fill(0);
+  for (const p of unique) {
+    const idx = Math.round(p.depth + depthOffset);
+    if (idx >= 0 && idx < shipDepth)
+      minWidthForRow[idx] = Math.max(minWidthForRow[idx], Math.ceil(p.absCol));
+  }
+
   const widths = [];
   for (let i = 0; i < shipDepth; i++) {
     const t    = shipDepth <= 1 ? 0.5 : i / (shipDepth - 1);
     const base = envW(t) * maxHalfW;
     const jitter = (rng() - 0.5) * 0.8; // ±0.4 cell organic variation so rows aren't perfectly stepped
-    widths.push(Math.max(1, Math.min(9, Math.round(base + jitter))));
+    // Ensure the width is at least enough to contain any troop on this row
+    widths.push(Math.max(minWidthForRow[i], Math.max(1, Math.min(9, Math.round(base + jitter)))));
   }
 
   // ── Build hull cells ─────────────────────────────────────────────────────
   const hull = new Set();
 
   for (let i = 0; i < shipDepth; i++) {
-    const row = isPlayer ? 10 + i : 9 - i;
-    if (row < 0 || row >= G) continue;
+    // Anchor to troop formation: nose sits hullBase steps from the half boundary
+    const row = isPlayer ? 10 + hullBase + i : 9 - hullBase - i;
+    // Never cross the battle line
+    if (isPlayer  && (row < 10 || row >= G)) continue;
+    if (!isPlayer && (row > 9  || row < 0))  continue;
     const w = widths[i];
     for (let c = 10 - w; c <= 9 + w; c++)
       if (c >= 0 && c < G) hull.add(`${row},${c}`);
@@ -317,8 +333,10 @@ function generateHull(troops, side) {
     for (const p of unique) {
       const armI = Math.round(p.depth + depthOffset);
       if (armI < 0 || armI >= shipDepth) continue;
-      const armRow = isPlayer ? 10 + armI : 9 - armI;
-      if (armRow < 0 || armRow >= G) continue;
+      const armRow = isPlayer ? 10 + hullBase + armI : 9 - hullBase - armI;
+      // Never cross battle line
+      if (isPlayer  && (armRow < 10 || armRow >= G)) continue;
+      if (!isPlayer && (armRow > 9  || armRow < 0))  continue;
 
       // Full arm span: symmetric, from mirror to troop column + 1 overhang
       const armR  = Math.min(18, Math.round(9.5 + p.absCol + 1));
@@ -343,8 +361,9 @@ function generateHull(troops, side) {
   // ── FIGHTER: twin engine nacelle bumps at tail ───────────────────────────
   if (archetype === 'FIGHTER' && shipDepth >= 4) {
     for (let k = shipDepth - 2; k < shipDepth; k++) {
-      const row  = isPlayer ? 10 + k : 9 - k;
-      if (row < 0 || row >= G) continue;
+      const row  = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer  && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9  || row < 0))  continue;
       const nacW = widths[k] + 1;
       const lo   = 10 - nacW - 1,  hi = 9 + nacW + 1;
       if (lo >= 0) hull.add(`${row},${lo}`);
