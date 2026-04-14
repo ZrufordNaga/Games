@@ -133,43 +133,14 @@ const C = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ARCHETYPE PROFILES  (index 0 = nose row, index 9 = tail row)
-// half-width in grid cells; ship spans cols (10-w … 9+w) = 2w cols
-// ─────────────────────────────────────────────────────────────────────────────
-const PROFILES = {
-  FIGHTER: {
-    widths:  [1, 1, 2, 3, 5, 4, 3, 2, 3, 3],
-    // extra nacelle pairs: [noseIdx, colsOutside, rowCount]
-    nacelles: [{ idx: 7, offset: 2, depth: 2 }],
-  },
-  BOMBER:  {
-    widths:  [2, 3, 4, 6, 8, 7, 5, 5, 5, 5],
-    nacelles: [],
-  },
-  WING:    {
-    widths:  [1, 2, 5, 8, 9, 9, 7, 4, 3, 3],
-    nacelles: [],
-  },
-  ROCKET:  {
-    widths:  [1, 1, 1, 1, 2, 2, 2, 2, 1, 2],
-    nacelles: [{ idx: 8, offset: 1, depth: 2 }],
-  },
-  DRONE:   {
-    widths:  [2, 3, 4, 5, 5, 5, 4, 4, 4, 4],
-    nacelles: [{ idx: 6, offset: 2, depth: 3 }],
-  },
-};
-const ARCHETYPE_NAMES = ['FIGHTER','BOMBER','WING','ROCKET','DRONE'];
-
-// ─────────────────────────────────────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────────────────────────────────────
 let playerTroops = new Set(); // "r,c"
 let enemyTroops  = new Set();
 let playerHull   = new Set();
 let enemyHull    = new Set();
-let playerArch   = 'FIGHTER';
-let enemyArch    = 'FIGHTER';
+let playerArch   = 'NONE';
+let enemyArch    = 'NONE';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CANVAS SETUP
@@ -202,74 +173,182 @@ function seedFromTroops(troops) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ARCHETYPE DETECTION
-// ─────────────────────────────────────────────────────────────────────────────
-function detectArchetype(troops) {
-  if (!troops.size) return 'FIGHTER';
-  const pos = [...troops].map(k => k.split(',').map(Number));
-  const cols = pos.map(p => p[1]);
-  const rows = pos.map(p => p[0]);
-  const minC = Math.min(...cols), maxC = Math.max(...cols);
-  const minR = Math.min(...rows), maxR = Math.max(...rows);
-  const spread = maxC - minC;
-  const depth  = maxR - minR;
-  const count  = troops.size;
-  if (spread >= 14)                     return 'WING';
-  if (spread >= 9)                      return 'BOMBER';
-  if (depth >= 6 && spread <= 4)        return 'ROCKET';
-  if (count >= 8 && spread <= 7)        return 'DRONE';
-  return 'FIGHTER';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HULL GENERATION
+// HULL GENERATION  (formation-proportional, geometry-driven)
+//
 // side: 'player' (rows 10-19, nose=row10) | 'enemy' (rows 0-9, nose=row9)
+//
+// Key design:
+//   • Ship size = troop bounding box + small margins.  1 troop → tiny ship.
+//   • Archetype is derived from geometric relationships of the formation:
+//       DRONE  – few troops, wide lateral spread  → thin spine + arm wings
+//       DELTA  – troops widen with depth          → B2 / flying-wing delta
+//       WING   – flat wide row                   → broad flying wing
+//       BOMBER – moderate width, squat depth      → fat bomber silhouette
+//       ROCKET – narrow deep column               → pencil / rocket
+//       FIGHTER– everything else                  → classic jet with nacelles
 // ─────────────────────────────────────────────────────────────────────────────
 function generateHull(troops, side) {
-  const isPlayer = side === 'player';
-  const archetype = detectArchetype(troops);
+  if (!troops.size) return { hull: new Set(), archetype: 'NONE' };
 
+  const isPlayer = side === 'player';
   const rng = makeRng(seedFromTroops(troops) ^ (isPlayer ? 0xAAAA : 0x5555));
 
-  const prof   = PROFILES[archetype];
-  const widths = prof.widths.map(w =>
-    Math.max(1, Math.min(9, w + Math.round((rng() - 0.5) * 2)))
-  );
-
-  // Troop influence: wide troops → broader wings; deep troops → thicker body
-  if (troops.size > 0) {
-    const pos    = [...troops].map(k => k.split(',').map(Number));
-    const cols   = pos.map(p => p[1]);
-    const minC   = Math.min(...cols), maxC = Math.max(...cols);
-    const spread = maxC - minC;
-    const boost  = Math.floor(spread / 5);
-    for (let i = 2; i <= 6; i++)
-      widths[i] = Math.min(9, widths[i] + boost);
-
-    // Dense center troops → sharpen nose
-    const centerTroops = pos.filter(([, c]) => c >= 8 && c <= 11).length;
-    if (centerTroops >= 2) widths[0] = Math.max(1, widths[0] - 1);
+  // ── Normalize to (depth, absCol) space ──────────────────────────────────
+  // depth: 0 = nose-most grid row (row 10 for player, row 9 for enemy)
+  // absCol: absolute distance from center axis (9.5), always ≥ 0
+  const seenKeys = new Set();
+  const unique = [];   // de-duplicated unique (depth, absCol) pairs
+  for (const k of troops) {
+    const [r, c] = k.split(',').map(Number);
+    const depth  = isPlayer ? r - 10 : 9 - r;
+    const absCol = Math.abs(c - 9.5);
+    const key    = `${depth},${Math.round(absCol * 10)}`;
+    if (!seenKeys.has(key)) { seenKeys.add(key); unique.push({ depth, absCol }); }
   }
 
+  const n       = unique.length;
+  const depths  = unique.map(p => p.depth);
+  const absCols = unique.map(p => p.absCol);
+  const minD    = Math.min(...depths);
+  const maxD    = Math.max(...depths);
+  const maxA    = Math.max(...absCols);
+  const dSpan   = Math.max(0, maxD - minD);  // depth range of formation
+  const aspect  = dSpan === 0 ? 99 : maxA / dSpan; // lateral/depth ratio
+
+  // ── Archetype detection ──────────────────────────────────────────────────
+  // Check delta: troops get progressively wider with depth (B2/triangle)
+  let deltaScore = 0;
+  if (n >= 3 && dSpan >= 2) {
+    const sorted  = [...unique].sort((a, b) => a.depth - b.depth);
+    let widening  = 0;
+    for (let i = 1; i < sorted.length; i++)
+      if (sorted[i].absCol > sorted[i - 1].absCol) widening++;
+    deltaScore = widening / (sorted.length - 1);
+  }
+
+  let archetype;
+  if (n === 1 && maxA < 1.5) {
+    archetype = 'ROCKET';                           // single narrow troop
+  } else if (deltaScore >= 0.65 && dSpan >= 2) {
+    // ≥65 % of consecutive depth-sorted pairs widen → reliably a triangle/delta formation
+    archetype = 'DELTA';                            // widening triangle → B2
+  } else if (maxA >= 4.0 && dSpan === 0) {
+    archetype = 'DRONE';                            // all troops same depth, wide → arm drone
+  } else if (aspect >= 2.0 || (n >= 2 && maxA >= 6)) {
+    archetype = 'WING';                             // flat wide spread
+  } else if (dSpan >= 3 && maxA <= 2.5) {
+    archetype = 'ROCKET';                           // deep narrow column
+  } else if (aspect >= 1.0 && maxA >= 2.5) {
+    archetype = 'BOMBER';                           // moderate width/depth
+  } else {
+    archetype = 'FIGHTER';
+  }
+
+  // ── Ship size proportional to formation ─────────────────────────────────
+  const noseMargin = 1;
+  const tailMargins = { FIGHTER: 2, BOMBER: 2, WING: 2, ROCKET: 3, DRONE: 1, DELTA: 2 };
+  const sideMargins = { FIGHTER: 2, BOMBER: 2, WING: 1, ROCKET: 1, DRONE: 1, DELTA: 1 };
+  const tailMargin  = tailMargins[archetype] || 2;
+  const sideMargin  = sideMargins[archetype] || 2;
+  const shipDepth   = Math.min(9, Math.max(3, dSpan + noseMargin + tailMargin));
+  const maxHalfW    = Math.min(9, Math.max(1, Math.ceil(maxA) + sideMargin));
+
+  // depthOffset: shifts formation depths so minD maps to noseMargin index
+  const depthOffset = noseMargin - minD;
+
+  // ── Width envelope (t=0 nose, t=1 tail) → multiplier 0..1 ──────────────
+  function envW(t) {
+    switch (archetype) {
+      case 'FIGHTER':
+        // Needle nose → wing swell → slight pinch → engine bump tail
+        if (t < 0.20) return t / 0.20 * 0.40;
+        if (t < 0.45) return 0.40 + (t - 0.20) / 0.25 * 0.60;
+        if (t < 0.70) return 1.00 - (t - 0.45) / 0.25 * 0.35;
+        return 0.65 + (t - 0.70) / 0.30 * 0.15;
+      case 'BOMBER':
+        // Wide fat belly, taper both ends
+        if (t < 0.25) return t / 0.25 * 0.75;
+        if (t < 0.65) return 0.75 + (t - 0.25) / 0.40 * 0.25;
+        return 1.00 - (t - 0.65) / 0.35 * 0.55;
+      case 'WING':
+        // Sharp needle → sweeping wide → moderate taper
+        if (t < 0.12) return t / 0.12 * 0.20;
+        if (t < 0.45) return 0.20 + (t - 0.12) / 0.33 * 0.80;
+        return 1.00 - (t - 0.45) / 0.55 * 0.65;
+      case 'ROCKET':
+        // Thin constant body with small bulge mid
+        if (t < 0.15) return t / 0.15 * 0.70;
+        if (t < 0.55) return 0.70 + (t - 0.15) / 0.40 * 0.30;
+        return 1.00 - (t - 0.55) / 0.45 * 0.55;
+      case 'DRONE':
+        // Ultra-thin spine (arms handled separately)
+        return 0.12;
+      case 'DELTA':
+        // Razor point → steadily sweeps to a broad trailing delta edge (B2)
+        if (t < 0.10) return t / 0.10 * 0.12;
+        return 0.12 + (t - 0.10) / 0.90 * 0.88;
+      default:
+        return 0.5;
+    }
+  }
+
+  // ── Build per-row widths ─────────────────────────────────────────────────
+  const widths = [];
+  for (let i = 0; i < shipDepth; i++) {
+    const t    = shipDepth <= 1 ? 0.5 : i / (shipDepth - 1);
+    const base = envW(t) * maxHalfW;
+    const jitter = (rng() - 0.5) * 0.8; // ±0.4 cell organic variation so rows aren't perfectly stepped
+    widths.push(Math.max(1, Math.min(9, Math.round(base + jitter))));
+  }
+
+  // ── Build hull cells ─────────────────────────────────────────────────────
   const hull = new Set();
 
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < shipDepth; i++) {
     const row = isPlayer ? 10 + i : 9 - i;
-    const w   = widths[i];
+    if (row < 0 || row >= G) continue;
+    const w = widths[i];
+    for (let c = 10 - w; c <= 9 + w; c++)
+      if (c >= 0 && c < G) hull.add(`${row},${c}`);
+  }
 
-    // Main body band (symmetric around col 9.5)
-    for (let c = 10 - w; c <= 9 + w; c++) hull.add(`${row},${c}`);
+  // ── DRONE: arm wings extend to troop lateral positions ──────────────────
+  if (archetype === 'DRONE') {
+    for (const p of unique) {
+      const armI = Math.round(p.depth + depthOffset);
+      if (armI < 0 || armI >= shipDepth) continue;
+      const armRow = isPlayer ? 10 + armI : 9 - armI;
+      if (armRow < 0 || armRow >= G) continue;
 
-    // Nacelle pods
-    for (const nac of prof.nacelles) {
-      if (i >= nac.idx && i < nac.idx + nac.depth) {
-        const lo = 10 - widths[nac.idx] - nac.offset;
-        const hi = 9  + widths[nac.idx] + nac.offset;
-        if (lo >= 0)     hull.add(`${row},${lo}`);
-        if (hi < G)      hull.add(`${row},${hi}`);
-        if (lo - 1 >= 0) hull.add(`${row},${lo - 1}`);
-        if (hi + 1 < G)  hull.add(`${row},${hi + 1}`);
+      // Full arm span: symmetric, from mirror to troop column + 1 overhang
+      const armR  = Math.min(18, Math.round(9.5 + p.absCol + 1));
+      const armL  = Math.max(1,  19 - armR);
+      for (let c = armL; c <= armR; c++) hull.add(`${armRow},${c}`);
+
+      // Wing-tip thickening: outer 3 cells (±2 from armR) on adjacent rows make
+      // wingtips look solid/3D rather than a single-cell-thin edge
+      const tipR = armR, tipL = Math.max(armL, armR - 2);
+      const mirTipR = 19 - tipL, mirTipL = 19 - tipR;
+      for (const dRow of [-1, 1]) {
+        const adjRow = isPlayer ? armRow + dRow : armRow - dRow;
+        if (adjRow < 0 || adjRow >= G) continue;
+        if (isPlayer && adjRow < 10) continue;
+        if (!isPlayer && adjRow > 9) continue;
+        for (let c = tipL;    c <= tipR;    c++) hull.add(`${adjRow},${c}`);
+        for (let c = mirTipL; c <= mirTipR; c++) hull.add(`${adjRow},${c}`);
       }
+    }
+  }
+
+  // ── FIGHTER: twin engine nacelle bumps at tail ───────────────────────────
+  if (archetype === 'FIGHTER' && shipDepth >= 4) {
+    for (let k = shipDepth - 2; k < shipDepth; k++) {
+      const row  = isPlayer ? 10 + k : 9 - k;
+      if (row < 0 || row >= G) continue;
+      const nacW = widths[k] + 1;
+      const lo   = 10 - nacW - 1,  hi = 9 + nacW + 1;
+      if (lo >= 0) hull.add(`${row},${lo}`);
+      if (hi < G)  hull.add(`${row},${hi}`);
     }
   }
 
@@ -378,24 +457,44 @@ function moduleColors(noseProgress, colDist) {
   return { nose, tail, side };
 }
 
-function drawModuleCell(c, r, side) {
-  const isPlayer   = side === 'player';
-  const noseRow    = isPlayer ? 10 : 9;
-  const tailRow    = isPlayer ? 19 :  0;
-  const noseP      = isPlayer ? (r - noseRow) / 9 : (noseRow - r) / 9;
-  const colDist    = Math.abs(c - 9.5) / 9.5;
-  const mc         = moduleColors(Math.max(0, Math.min(1, noseP)), colDist);
+// hullBounds: { noseRow, tailRow } – actual first and last hull rows for this side
+function drawModuleCell(c, r, side, hullBounds) {
+  const isPlayer = side === 'player';
+  const span     = Math.max(1, Math.abs(hullBounds.tailRow - hullBounds.noseRow));
+  // noseP: 0 at nose-most row, 1 at tail-most row, normalized to actual ship span
+  const noseP    = isPlayer
+    ? (r - hullBounds.noseRow) / span
+    : (hullBounds.noseRow - r) / span;
+  const colDist  = Math.abs(c - 9.5) / 9.5;
+  const mc       = moduleColors(Math.max(0, Math.min(1, noseP)), colDist);
 
   // For player: "nose-facing" sector = top; "tail-facing" = bottom
   // For enemy:  "nose-facing" sector = bottom; "tail-facing" = top
-  const noseDir  = isPlayer ? 'top'    : 'bottom';
-  const tailDir  = isPlayer ? 'bottom' : 'top';
+  const noseDir = isPlayer ? 'top'    : 'bottom';
+  const tailDir = isPlayer ? 'bottom' : 'top';
 
   const pad = 4; // inset so the dark X lines show between modules
   tri(c, r, noseDir, mc.nose,  pad);
   tri(c, r, tailDir, mc.tail,  pad);
   tri(c, r, 'left',  mc.side,  pad);
   tri(c, r, 'right', mc.side,  pad);
+}
+
+// Compute actual nose-row and tail-row from a hull Set
+function hullRowBounds(hull, isPlayer) {
+  let noseRow = isPlayer ? 19 : 0;
+  let tailRow = isPlayer ? 10 : 9;
+  for (const k of hull) {
+    const r = +k.split(',')[0];
+    if (isPlayer) {
+      if (r < noseRow) noseRow = r;
+      if (r > tailRow) tailRow = r;
+    } else {
+      if (r > noseRow) noseRow = r;
+      if (r < tailRow) tailRow = r;
+    }
+  }
+  return { noseRow, tailRow };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -476,6 +575,8 @@ function render() {
   }
 
   // ── HULL PASS 2 — colored interior modules ──────────────────
+  const eBounds = enemyHull.size  ? hullRowBounds(enemyHull,  false) : { noseRow: 9,  tailRow: 0 };
+  const pBounds = playerHull.size ? hullRowBounds(playerHull, true)  : { noseRow: 10, tailRow: 19 };
   for (const key of enemyHull) {
     const [r, c] = key.split(',').map(Number);
     if (isInterior(r, c, enemyHull) && !enemyTroops.has(key)) {
@@ -487,7 +588,7 @@ function render() {
       ctx.moveTo(x, y); ctx.lineTo(x + CS, y + CS);
       ctx.moveTo(x + CS, y); ctx.lineTo(x, y + CS);
       ctx.stroke();
-      drawModuleCell(c, r, 'enemy');
+      drawModuleCell(c, r, 'enemy', eBounds);
     }
   }
   for (const key of playerHull) {
@@ -500,7 +601,7 @@ function render() {
       ctx.moveTo(x, y); ctx.lineTo(x + CS, y + CS);
       ctx.moveTo(x + CS, y); ctx.lineTo(x, y + CS);
       ctx.stroke();
-      drawModuleCell(c, r, 'player');
+      drawModuleCell(c, r, 'player', pBounds);
     }
   }
 
@@ -591,18 +692,59 @@ canvas.addEventListener('mousedown', e => {
 // ─────────────────────────────────────────────────────────────────────────────
 // BUTTON ACTIONS
 // ─────────────────────────────────────────────────────────────────────────────
+// Generate targeted formation patterns to produce varied archetypes
 function randomTroopsForSide(side) {
-  const rng  = makeRng(Date.now() & 0x7fffffff);
-  const troops = new Set();
-  const count  = 3 + Math.floor(rng() * 6); // 3–8 troops per side (right half)
+  const rng      = makeRng(Date.now() & 0x7fffffff);
+  const troops   = new Set();
   const rowStart = side === 'player' ? 10 : 0;
-  const rowEnd   = side === 'player' ? 19 : 9;
 
-  for (let i = 0; i < count; i++) {
-    const r = rowStart + Math.floor(rng() * (rowEnd - rowStart + 1));
-    const c = 10 + Math.floor(rng() * 8); // right half (10-17), mirror handles left
+  function add(r, c) {
+    if (r < 0 || r >= G || c < 0 || c >= G) return;
     troops.add(`${r},${c}`);
-    troops.add(`${r},${19 - c}`);  // auto-mirror
+    troops.add(`${r},${19 - c}`);
+  }
+
+  const pattern = Math.floor(rng() * 6);
+  switch (pattern) {
+    case 0: { // FIGHTER: 2-3 troops, tight central cluster
+      const dr = Math.floor(rng() * 2);
+      add(rowStart + 1 + dr,          10 + Math.floor(rng() * 2));
+      add(rowStart + 2 + dr,          11 + Math.floor(rng() * 2));
+      if (rng() > 0.5)
+        add(rowStart + 3 + dr,        12 + Math.floor(rng() * 2));
+      break;
+    }
+    case 1: { // DRONE: 2 wide troops at same depth → arm drone
+      const d = Math.floor(rng() * 3);
+      add(rowStart + 2 + d, 14 + Math.floor(rng() * 3));  // one far-out pair
+      break;
+    }
+    case 2: { // DELTA / B2: triangle widening with depth
+      add(rowStart + 1, 10);
+      add(rowStart + 2, 11 + Math.floor(rng() * 2));
+      add(rowStart + 3, 13 + Math.floor(rng() * 2));
+      break;
+    }
+    case 3: { // ROCKET: narrow vertical column
+      const c = 10 + Math.floor(rng() * 2);
+      const len = 3 + Math.floor(rng() * 4);
+      for (let i = 0; i < len; i++) add(rowStart + 1 + i, c);
+      break;
+    }
+    case 4: { // WING: 2 wide troops at different depths → swept flying wing
+      const d = Math.floor(rng() * 2);
+      add(rowStart + 1 + d, 15 + Math.floor(rng() * 3));
+      add(rowStart + 2 + d, 13 + Math.floor(rng() * 2));
+      break;
+    }
+    case 5: { // BOMBER: 3 troops stacked in a column → wide, squat silhouette
+      const base = rowStart + 1 + Math.floor(rng() * 2);
+      const col  = 12 + Math.floor(rng() * 2);
+      add(base,     col);
+      add(base + 1, col + Math.floor(rng() * 2));
+      add(base + 2, col - Math.floor(rng() * 2));
+      break;
+    }
   }
   return troops;
 }
@@ -626,23 +768,26 @@ function clearAll() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// INITIAL STATE — seed both ships with default troop layouts
+// INITIAL STATE — player=DELTA/B2 showcase, enemy=DRONE showcase
 // ─────────────────────────────────────────────────────────────────────────────
 (function init() {
-  // Default player formation: a mid-spread fighter layout
+  // Player: triangle formation → DELTA / B2 bomber silhouette
+  // Troops widen with depth: narrow at nose (row 10), very wide at tail
   [
-    [12,11],[12,8],[13,12],[13,7],[14,13],[14,6],[15,11],[15,8]
-  ].forEach(([r,c]) => {
+    [11, 10],          // nose pair (mirrored → cols 9,10)
+    [12, 12],          // mid pair
+    [13, 14],          // wide pair → gives deltaScore=1.0 → DELTA
+  ].forEach(([r, c]) => {
     playerTroops.add(`${r},${c}`);
-    playerTroops.add(`${r},${19-c}`);
+    playerTroops.add(`${r},${19 - c}`);
   });
 
-  // Default enemy formation: a wide wing/bomber layout
+  // Enemy: 2 wide-spread troops at same depth → DRONE with arm wings
   [
-    [5,10],[5,9],[6,12],[6,7],[7,13],[7,6],[4,11],[4,8]
-  ].forEach(([r,c]) => {
+    [7, 15],           // one far-out pair
+  ].forEach(([r, c]) => {
     enemyTroops.add(`${r},${c}`);
-    enemyTroops.add(`${r},${19-c}`);
+    enemyTroops.add(`${r},${19 - c}`);
   });
 
   regen();
