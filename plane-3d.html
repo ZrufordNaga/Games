@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D Plane — Shape Map Prototype</title>
+<style>
+  html, body { margin:0; overflow:hidden; background:#06060f; }
+  canvas      { display:block; }
+  #legend {
+    position:fixed; top:12px; left:14px;
+    color:#cde; font:11px/1.9 'Courier New', monospace;
+    text-shadow:0 0 6px #000; pointer-events:none;
+  }
+  #legend span { display:inline-block; width:10px; height:10px;
+                 border-radius:2px; margin-right:6px; vertical-align:middle; }
+  #hint {
+    position:fixed; bottom:10px; left:50%; transform:translateX(-50%);
+    color:#6af; font:11px monospace; text-align:center; pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="legend">
+  <div><span style="background:#ff4422"></span>Nose – HS (Half Sphere)</div>
+  <div><span style="background:#1a55ee"></span>Body seg 3 – HC×2 (front)</div>
+  <div><span style="background:#2277ff"></span>Body seg 2 – HC×2 (mid) ← wing root</div>
+  <div><span style="background:#33aaff"></span>Body seg 1 – HC×2 (rear)</div>
+  <div><span style="background:#22bb55"></span>Wing – s0.2 HC (leading edge)</div>
+  <div><span style="background:#33ee66"></span>Wing – s0.2 Cube (flat panel)</div>
+  <div><span style="background:#118844"></span>Wing – s0.2 HC (trailing edge)</div>
+  <div><span style="background:#ffaa22"></span>Tip – s0.8 QS (quarter-sphere caps)</div>
+  <div><span style="background:#ffdd55"></span>Tip – s0.8 HC (half-cylinder body)</div>
+</div>
+
+<div id="hint">🖱 Left-drag = rotate &nbsp;·&nbsp; Scroll = zoom &nbsp;·&nbsp; Right-drag = pan</div>
+
+<script type="importmap">{
+  "imports": {
+    "three":         "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}</script>
+
+<script type="module">
+import * as THREE             from 'three';
+import { OrbitControls }      from 'three/addons/controls/OrbitControls.js';
+
+// ── Renderer ──────────────────────────────────────────────────────────────────
+const canvas   = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+
+// ── Scene / Camera ────────────────────────────────────────────────────────────
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x06060f);
+scene.fog        = new THREE.Fog(0x06060f, 30, 80);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(0, 13, 20);
+
+const ctrl = new OrbitControls(camera, renderer.domElement);
+ctrl.enableDamping = true;
+ctrl.dampingFactor = 0.07;
+ctrl.target.set(0, 0, 3.5);    // look at mid-fuselage
+
+// ── Lights ────────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xc8d8ff, 0.55));
+
+const key = new THREE.DirectionalLight(0xffffff, 2.8);
+key.position.set(7, 16, 10);
+key.castShadow = true;
+key.shadow.mapSize.setScalar(1024);
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0x3355cc, 0.55);
+fill.position.set(-8, -4, -10);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0xff6600, 0.35);
+rim.position.set(0, -8, -14);
+scene.add(rim);
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+const C = {
+  nose:    0xff4422,   // nose dome             – vivid red-orange
+  body0:   0x1a55ee,   // body seg 3 (front)    – strong blue
+  body1:   0x2277ff,   // body seg 2 (mid/wing) – medium blue
+  body2:   0x33aaff,   // body seg 1 (rear)     – light blue
+  wLead:   0x22bb55,   // wing leading-edge HC  – green
+  wFlat:   0x33ee66,   // wing flat cube panels – light green
+  wTrail:  0x118844,   // wing trailing-edge HC – dark green
+  tipQS:   0xffaa22,   // tip quarter-spheres   – orange
+  tipHC:   0xffdd55,   // tip half-cylinder     – yellow
+};
+
+// ── Material factory (cached) ─────────────────────────────────────────────────
+const _mats = {};
+function mat(hex) {
+  if (!_mats[hex]) _mats[hex] = new THREE.MeshPhongMaterial({
+    color: hex, shininess: 90, specular: 0x223344,
+  });
+  return _mats[hex];
+}
+
+// ── Plane group (all geometry lives here – one group to rotate) ───────────────
+const planeGroup = new THREE.Group();
+scene.add(planeGroup);
+
+// ── Geometry helpers ──────────────────────────────────────────────────────────
+function mesh(geo, color) {
+  const m = new THREE.Mesh(geo, mat(color));
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
+function add(m) { planeGroup.add(m); return m; }
+
+// ── Core dimensions ───────────────────────────────────────────────────────────
+const R  = 1.0;   // fuselage radius
+const SL = 2.0;   // one fuselage segment length
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 1. NOSE  (HS – Half Sphere)
+// ─────────────────────────────────────────────────────────────────────────────
+//  SphereGeometry with thetaLength = π/2 → top dome only (upper hemisphere).
+//  Default dome axis = +Y.  After rotation.x = +π/2 the dome points in +Z.
+//  Flat open face placed at z = 3×SL = 6, dome tip extends to z = 6 + R = 7.
+//  The cylinder body segment 3 also ends at z = 6 → flush, seamless join.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const geo  = new THREE.SphereGeometry(R, 56, 28, 0, Math.PI * 2, 0, Math.PI / 2);
+  const nose = mesh(geo, C.nose);
+  nose.rotation.x = Math.PI / 2;       // dome → +Z direction
+  nose.position.set(0, 0, 3 * SL);     // flat face at z = 6
+  add(nose);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 2. BODY  (HC×2 per section = full cylinder — three sections)
+// ─────────────────────────────────────────────────────────────────────────────
+//  Three segments laid end-to-end, axis along +Z, no gaps between them:
+//    Seg 3 (front): centre z = 2.5·SL = 5  →  z ∈ [4, 6]
+//    Seg 2 (mid):   centre z = 1.5·SL = 3  →  z ∈ [2, 4]   ← wing attachment
+//    Seg 1 (rear):  centre z = 0.5·SL = 1  →  z ∈ [0, 2]
+// ─────────────────────────────────────────────────────────────────────────────
+const BODY_DATA = [
+  { z: 2.5 * SL, col: C.body0 },   // front (closest to nose)
+  { z: 1.5 * SL, col: C.body1 },   // mid   (wing root here)
+  { z: 0.5 * SL, col: C.body2 },   // rear
+];
+for (const { z, col } of BODY_DATA) {
+  const geo = new THREE.CylinderGeometry(R, R, SL, 56, 1, false);
+  const m   = mesh(geo, col);
+  m.rotation.x = Math.PI / 2;    // CylinderGeometry default axis = Y → rotate to Z
+  m.position.set(0, 0, z);
+  add(m);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 3. WINGS  [(s0.2 HC)(s0.2 Cube)(s0.2 HC)] × 3, mirrored ±X
+// ─────────────────────────────────────────────────────────────────────────────
+//  Wings attach at mid body segment (centre z = 1.5·SL = 3.0).
+//  Wing chord  WCZ = SL = 2.0  (matches mid-segment Z extent perfectly).
+//  Wing span per unit  WUX = 1.5.
+//  Squish scale 0.2 → wing half-thickness  WH = R × 0.2 = 0.2.
+//
+//  Each unit structure (top view, nose toward +Z):
+//
+//    +Z  ╔════════════════╗  ← leading-edge HC  (cylinder r=WH, axis along X)
+//        ║   flat cube    ║  ← flat box  (WUX × 2·WH × WCZ−2·WH)
+//    −Z  ╚════════════════╝  ← trailing-edge HC (cylinder r=WH, axis along X)
+//        │←── WUX = 1.5 ──│
+//        ← WCZ = 2.0 chord →
+//
+//  HC cylinders have radius WH = 0.2, so diameter = 0.4 in Z.
+//  Box Z width = WCZ − 2·WH = 1.6  so box + two HCs = WCZ exactly.
+//  HC cylinder centre z = WING_Z ± (WCZ/2 − WH) = 3 ± 0.8.
+//  Box centre z = WING_Z = 3.
+// ─────────────────────────────────────────────────────────────────────────────
+const WH     = R * 0.20;          // half-thickness     = 0.2
+const WCZ    = SL;                // chord (Z extent)   = 2.0
+const WUX    = 1.5;               // span per unit (X)
+const BOX_Z  = WCZ - 2 * WH;     // box Z width        = 1.6
+const WING_Z = 1.5 * SL;         // wing centre Z      = 3.0
+
+function addWingUnit(unitIdx, side) {
+  // unitIdx 0, 1, 2 → counting outward from fuselage
+  const xInner  = R + unitIdx * WUX;           // inner span edge from centre
+  const xCentre = (xInner + WUX / 2) * side;  // signed X centre of this unit
+
+  // Leading-edge HC (cylinder, axis along X, positioned at chord front)
+  const gcLead = new THREE.CylinderGeometry(WH, WH, WUX, 20, 1, false);
+  const mLead  = mesh(gcLead, C.wLead);
+  mLead.rotation.z = Math.PI / 2;             // axis → X
+  mLead.position.set(xCentre, 0, WING_Z + WCZ / 2 - WH);
+  add(mLead);
+
+  // Flat-panel Cube
+  const gcFlat = new THREE.BoxGeometry(WUX, WH * 2, BOX_Z);
+  const mFlat  = mesh(gcFlat, C.wFlat);
+  mFlat.position.set(xCentre, 0, WING_Z);
+  add(mFlat);
+
+  // Trailing-edge HC
+  const gcTrail = new THREE.CylinderGeometry(WH, WH, WUX, 20, 1, false);
+  const mTrail  = mesh(gcTrail, C.wTrail);
+  mTrail.rotation.z = Math.PI / 2;
+  mTrail.position.set(xCentre, 0, WING_Z - WCZ / 2 + WH);
+  add(mTrail);
+}
+
+for (let u = 0; u < 3; u++) {
+  addWingUnit(u, +1);   // right wing
+  addWingUnit(u, -1);   // left  wing
+}
+
+// ── Wing-root bridge ──────────────────────────────────────────────────────────
+//  Fills the small gap between the cylindrical fuselage wall and the rectangular
+//  first wing unit so the transition looks solid, not just a gap.
+for (const side of [+1, -1]) {
+  // Leading-edge bridge cylinder
+  const gbl = new THREE.CylinderGeometry(WH, WH, R, 20, 1, false);
+  const mbl = mesh(gbl, C.wLead);
+  mbl.rotation.z = Math.PI / 2;
+  mbl.position.set(side * R / 2, 0, WING_Z + WCZ / 2 - WH);
+  add(mbl);
+
+  // Flat-panel bridge box
+  const gbf = new THREE.BoxGeometry(R, WH * 2, BOX_Z);
+  const mbf = mesh(gbf, C.wFlat);
+  mbf.position.set(side * R / 2, 0, WING_Z);
+  add(mbf);
+
+  // Trailing-edge bridge cylinder
+  const gbt = new THREE.CylinderGeometry(WH, WH, R, 20, 1, false);
+  const mbt = mesh(gbt, C.wTrail);
+  mbt.rotation.z = Math.PI / 2;
+  mbt.position.set(side * R / 2, 0, WING_Z - WCZ / 2 + WH);
+  add(mbt);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4. WING TIPS  (s0.8 QS)(s0.8 HC)(s0.8 QS),  mirrored ±X
+// ─────────────────────────────────────────────────────────────────────────────
+//  Each tip sits at the outer span edge of wing unit 2 (x = R + 3·WUX = 5.5).
+//  Scale 0.8 applied relative to wing unit:
+//    tR  = WH × 0.8 = 0.16    (QS radius / HC cross-section radius)
+//    tUX = WUX × 0.8 = 1.2    (tip span in X)
+//
+//  [QS front]  hemisphere dome → +Z  at z = WING_Z + WCZ/2 − tR
+//  [HC middle] flat cylinder axis → X, spans tUX, at z = WING_Z
+//  [QS rear]   hemisphere dome → −Z  at z = WING_Z − WCZ/2 + tR
+//
+//  Uses the same box + cylinder formula as a wing unit, just at scale 0.8.
+// ─────────────────────────────────────────────────────────────────────────────
+const tR         = WH  * 0.8;       // 0.16
+const tUX        = WUX * 0.8;       // 1.2
+const tBOX_Z     = WCZ - 2 * tR;   // 1.68
+const TIP_XINNER = R + 3 * WUX;     // 5.5
+
+function addWingTip(side) {
+  const xCentre = (TIP_XINNER + tUX / 2) * side;
+
+  // QS front — represented as a hemisphere (half-sphere) dome pointing +Z.
+  // SphereGeometry(r, wSegs, hSegs, phiStart, phiLen, thetaStart, thetaLen)
+  // thetaLen = π/2 → top dome (hemisphere), default dome axis = +Y.
+  // rotation.x = +π/2 → dome points +Z (leading edge).
+  const gqf = new THREE.SphereGeometry(tR, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+  const mqf = mesh(gqf, C.tipQS);
+  mqf.rotation.x = Math.PI / 2;   // dome → +Z
+  mqf.position.set(xCentre, 0, WING_Z + WCZ / 2 - tR);
+  add(mqf);
+
+  // HC middle — flat cylinder (axis along X, same as wing HCs).
+  const ghc = new THREE.CylinderGeometry(tR, tR, tUX, 20, 1, false);
+  const mhc = mesh(ghc, C.tipHC);
+  mhc.rotation.z = Math.PI / 2;
+  mhc.position.set(xCentre, 0, WING_Z);
+  add(mhc);
+
+  // QS rear — hemisphere dome pointing −Z (trailing edge).
+  // rotation.x = −π/2 → dome points −Z.
+  const gqr = new THREE.SphereGeometry(tR, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+  const mqr = mesh(gqr, C.tipQS);
+  mqr.rotation.x = -Math.PI / 2;  // dome → −Z
+  mqr.position.set(xCentre, 0, WING_Z - WCZ / 2 + tR);
+  add(mqr);
+
+  // Flat box connecting the two QS domes (same as wing flat panel, at tip scale)
+  const gbx = new THREE.BoxGeometry(tUX, tR * 2, tBOX_Z);
+  const mbx = mesh(gbx, C.tipHC);
+  mbx.position.set(xCentre, 0, WING_Z);
+  add(mbx);
+}
+
+addWingTip(+1);
+addWingTip(-1);
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+(function tick() {
+  requestAnimationFrame(tick);
+  ctrl.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>
