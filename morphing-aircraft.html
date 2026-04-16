@@ -63,56 +63,56 @@ function catmullRom(p0, p1, p2, p3, t) {
 }
 
 // ─── Shape definitions ────────────────────────────────────────────────────────
-// Profile waypoints: { t, rx, ry, fl }
+// Profile waypoints: { t, rx, ry, fl, tb }
 //   t  = position along body (0 = nose, 1 = tail)
 //   rx = half-width  (X)
 //   ry = half-height (Y)
-//   fl = horizontal wing flare (extra X extension, tapers at ±equator)
-// Shapes use BODY_LEN = 5 world units. Scale is chosen so widest shape
-// (≈ rx+fl ≈ 3.5) fills comfortably within screen at default zoom.
-// tb = top-bulge: extra upward height on the dorsal (top) surface — cockpit/spine ridge
+//   fl = horizontal wing flare (extra X extension, peaks at equator)
+//   tb = top-bulge: dorsal spine/cockpit ridge (peaks at top surface)
+// Shapes use BODY_LEN = 5 world units. Scale chosen so widest shape
+// (≈ rx+fl ≈ 2.4) fills comfortably within screen at default zoom.
 function p(t, rx, ry, fl = 0, tb = 0) { return { t, rx, ry, fl, tb }; }
 
 const SHAPES = [
-  // 0 ─ B2 Spirit ── ultra-flat flying wing, massive span, no spine ───────────
+  // 0 ─ B2 Spirit ── ultra-flat flying wing, no spine, massive span ───────────
   { name: 'B2 Spirit', col: [75, 120, 215],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.05, 0.14, 0.03),
-      p(0.14, 0.32, 0.06, 1.05),
-      p(0.30, 0.26, 0.07, 2.55),
-      p(0.52, 0.18, 0.06, 2.10),
-      p(0.70, 0.10, 0.05, 1.20),
-      p(0.88, 0.04, 0.03, 0.22),
+      p(0.05, 0.12, 0.03),
+      p(0.14, 0.28, 0.05, 0.90),
+      p(0.30, 0.22, 0.05, 2.20),
+      p(0.52, 0.16, 0.04, 1.85),
+      p(0.70, 0.09, 0.03, 1.05),
+      p(0.88, 0.03, 0.02, 0.18),
       p(1.00, 0.00, 0.00),
     ]},
-  // 1 ─ F-117 Nighthawk ── flat diamond facets, angled nose, delta ──────────
+  // 1 ─ F-117 Nighthawk ── flat hexagonal body, swept delta, stealth ──────────
   { name: 'F-117 Nighthawk', col: [45, 50, 60],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.07, 0.07, 0.04, 0.06),
-      p(0.18, 0.18, 0.09, 0.55, 0.03),
-      p(0.32, 0.22, 0.11, 1.30, 0.05),
-      p(0.50, 0.20, 0.10, 1.60),
-      p(0.68, 0.14, 0.08, 0.95),
-      p(0.85, 0.08, 0.05, 0.18),
+      p(0.08, 0.06, 0.03),
+      p(0.20, 0.16, 0.05, 0.42, 0.03),
+      p(0.35, 0.20, 0.06, 1.12, 0.04),
+      p(0.52, 0.18, 0.05, 1.42),
+      p(0.70, 0.12, 0.04, 0.82),
+      p(0.86, 0.06, 0.02, 0.12),
       p(1.00, 0.00, 0.00),
     ]},
-  // 2 ─ SR-71 Blackbird ── needle chine, twin nacelles as body ──────────────
+  // 2 ─ SR-71 Blackbird ── chined body, twin-nacelle rear, needle nose ─────────
   { name: 'SR-71 Blackbird', col: [22, 22, 38],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.05, 0.04, 0.03, 0.08),      // chined nose
-      p(0.15, 0.09, 0.07, 0.10, 0.05),
-      p(0.28, 0.14, 0.10, 0.08, 0.07),
-      p(0.42, 0.16, 0.11, 0.10),
-      p(0.57, 0.22, 0.13, 0.20),      // twin-nacelle body bulge
-      p(0.72, 0.24, 0.14, 0.18),
-      p(0.85, 0.16, 0.11, 0.08),
-      p(0.95, 0.07, 0.07),
+      p(0.05, 0.04, 0.03, 0.06),
+      p(0.14, 0.08, 0.05, 0.06, 0.04),
+      p(0.28, 0.12, 0.07, 0.04, 0.06),
+      p(0.42, 0.14, 0.08),
+      p(0.56, 0.18, 0.08, 0.32),
+      p(0.70, 0.20, 0.09, 0.36),
+      p(0.82, 0.14, 0.07),
+      p(0.93, 0.06, 0.06),
       p(1.00, 0.00, 0.00),
     ]},
-  // 3 ─ F-22 Raptor ── diamond-section body, cranked wing, dorsal spine ─────
+  // 3 ─ F-22 Raptor ── diamond-section body, cranked delta, dorsal spine ───────
   { name: 'F-22 Raptor', col: [105, 130, 175],
     profile: [
       p(0.00, 0.00, 0.00),
@@ -126,74 +126,75 @@ const SHAPES = [
       p(0.96, 0.06, 0.09),
       p(1.00, 0.00, 0.00),
     ]},
-  // 4 ─ Su-27 Flanker ── chined wide fuselage, twin nacelle tail, dorsal ─────
+  // 4 ─ Su-27 Flanker ── cranked delta, twin nacelle tail, tall spine ──────────
   { name: 'Su-27 Flanker', col: [155, 160, 140],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.06, 0.06, 0.05, 0.06),
-      p(0.16, 0.15, 0.12, 0.10, 0.12),
-      p(0.28, 0.24, 0.19, 0.55, 0.18),
-      p(0.42, 0.30, 0.24, 0.95, 0.20),
-      p(0.56, 0.28, 0.22, 0.68, 0.14),
-      p(0.68, 0.30, 0.22, 0.28, 0.08), // nacelle hump
-      p(0.80, 0.26, 0.19, 0.16),
-      p(0.92, 0.13, 0.15),
+      p(0.06, 0.05, 0.04),
+      p(0.16, 0.13, 0.10, 0.08, 0.14),
+      p(0.28, 0.20, 0.14, 0.48, 0.22),
+      p(0.40, 0.24, 0.16, 1.20, 0.24),
+      p(0.54, 0.22, 0.14, 0.80, 0.18),
+      p(0.64, 0.22, 0.13, 0.18, 0.08),
+      p(0.76, 0.20, 0.13, 0.22),
+      p(0.90, 0.10, 0.10),
       p(1.00, 0.00, 0.00),
     ]},
-  // 5 ─ Concorde ── ultra-long needle nose, slim ogival delta ───────────────
+  // 5 ─ Concorde ── ultra-long needle nose, slim ogival delta ──────────────────
   { name: 'Concorde', col: [230, 235, 255],
     profile: [
       p(0.00, 0.00, 0.00),
       p(0.04, 0.02, 0.02),
-      p(0.12, 0.05, 0.05, 0.0,  0.05),
-      p(0.26, 0.10, 0.10, 0.22, 0.12),
-      p(0.44, 0.16, 0.14, 0.62, 0.14),
-      p(0.62, 0.19, 0.16, 0.72, 0.10),
-      p(0.78, 0.16, 0.14, 0.42, 0.06),
-      p(0.90, 0.12, 0.12),
-      p(0.97, 0.06, 0.08),
+      p(0.12, 0.05, 0.04, 0.00, 0.04),
+      p(0.26, 0.09, 0.07, 0.16, 0.10),
+      p(0.44, 0.13, 0.10, 0.52, 0.12),
+      p(0.62, 0.16, 0.11, 0.65, 0.08),
+      p(0.78, 0.14, 0.10, 0.38, 0.04),
+      p(0.90, 0.10, 0.09),
+      p(0.97, 0.05, 0.06),
       p(1.00, 0.00, 0.00),
     ]},
-  // 6 ─ X-47B UCAV ── cranked-arrow flat wing, no spine ────────────────────
+  // 6 ─ X-47B UCAV ── cranked-arrow flat wing, no spine ────────────────────────
   { name: 'X-47B UCAV', col: [70, 80, 100],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.06, 0.08, 0.04),
-      p(0.18, 0.22, 0.07, 0.72),
-      p(0.36, 0.24, 0.08, 1.55),
-      p(0.54, 0.18, 0.07, 1.65),
-      p(0.70, 0.12, 0.06, 1.00),
-      p(0.86, 0.06, 0.04, 0.28),
+      p(0.06, 0.07, 0.03),
+      p(0.18, 0.20, 0.05, 0.60),
+      p(0.34, 0.22, 0.06, 1.40),
+      p(0.52, 0.17, 0.05, 1.55),
+      p(0.70, 0.10, 0.04, 0.90),
+      p(0.86, 0.05, 0.03, 0.22),
       p(1.00, 0.00, 0.00),
     ]},
-  // 7 ─ Space Shuttle ── blunt ogive nose, thick delta, cabin hump ──────────
-  { name: 'Space Shuttle', col: [215, 215, 225],
+  // 7 ─ F/A-18 Hornet ── LEX delta, twin nacelle rear, dorsal spine ────────────
+  { name: 'F/A-18 Hornet', col: [170, 175, 185],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.07, 0.32, 0.28),
-      p(0.18, 0.50, 0.44, 0.16, 0.22),
-      p(0.36, 0.48, 0.44, 0.58, 0.26),
-      p(0.56, 0.44, 0.42, 0.50, 0.18),
-      p(0.72, 0.36, 0.34),
-      p(0.86, 0.26, 0.28),
-      p(0.96, 0.18, 0.22),
-      p(1.00, 0.08, 0.12),
-    ]},
-  // 8 ─ Hammerhead Destroyer ── wide T-bow, narrow neck, delta tail ─────────
-  { name: 'Hammerhead', col: [195, 75, 155],
-    profile: [
-      p(0.00, 0.00, 0.00),
-      p(0.04, 0.58, 0.18, 0.44),
-      p(0.14, 0.72, 0.24, 0.58, 0.08),
-      p(0.22, 0.62, 0.22, 0.32),
-      p(0.30, 0.18, 0.18, 0.04),
-      p(0.48, 0.16, 0.18),
-      p(0.64, 0.22, 0.20, 0.18),
-      p(0.80, 0.18, 0.18),
-      p(0.92, 0.11, 0.14),
+      p(0.06, 0.07, 0.06),
+      p(0.16, 0.14, 0.11, 0.16, 0.16),
+      p(0.28, 0.19, 0.14, 0.68, 0.22),
+      p(0.44, 0.21, 0.16, 0.82, 0.18),
+      p(0.58, 0.19, 0.14, 0.52, 0.10),
+      p(0.68, 0.20, 0.13, 0.08),
+      p(0.78, 0.20, 0.13),
+      p(0.90, 0.12, 0.11),
       p(1.00, 0.00, 0.00),
     ]},
-  // 9 ─ Long Spear ── needle interceptor, tiny delta mid, slender tail ───────
+  // 8 ─ MiG-21 Fishbed ── circular intake, slim delta, pure taper ──────────────
+  { name: 'MiG-21 Fishbed', col: [195, 70, 65],
+    profile: [
+      p(0.00, 0.00, 0.00),
+      p(0.05, 0.11, 0.11),
+      p(0.14, 0.13, 0.13),
+      p(0.26, 0.13, 0.12, 0.04, 0.06),
+      p(0.40, 0.14, 0.12, 0.52, 0.10),
+      p(0.56, 0.13, 0.11, 0.50, 0.08),
+      p(0.70, 0.12, 0.10, 0.08),
+      p(0.82, 0.10, 0.10),
+      p(0.95, 0.05, 0.05),
+      p(1.00, 0.00, 0.00),
+    ]},
+  // 9 ─ Long Spear ── needle interceptor, tiny delta mid, slender ───────────────
   { name: 'Long Spear', col: [60, 210, 210],
     profile: [
       p(0.00, 0.00, 0.00),
@@ -206,29 +207,33 @@ const SHAPES = [
       p(0.96, 0.04, 0.04),
       p(1.00, 0.00, 0.00),
     ]},
-  // 10 ─ Heavy Flying Wing ── thick swept wing bomber, cabin spine ──────────
-  { name: 'Heavy Flying Wing', col: [60, 175, 110],
+  // 10 ─ B-1B Lancer ── swept wing bomber, long nose, four-engine nacelle ───────
+  { name: 'B-1B Lancer', col: [60, 175, 110],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.06, 0.22, 0.16, 0.12, 0.08),
-      p(0.20, 0.55, 0.34, 1.38, 0.12),
-      p(0.42, 0.68, 0.48, 2.00, 0.16),
-      p(0.62, 0.56, 0.42, 1.62, 0.10),
-      p(0.78, 0.36, 0.30, 0.88),
-      p(0.93, 0.16, 0.16, 0.22),
+      p(0.04, 0.04, 0.04),
+      p(0.12, 0.10, 0.09, 0.10, 0.08),
+      p(0.26, 0.20, 0.15, 0.72, 0.22),
+      p(0.44, 0.24, 0.17, 0.62, 0.22),
+      p(0.60, 0.22, 0.16, 0.38, 0.16),
+      p(0.74, 0.18, 0.14),
+      p(0.86, 0.14, 0.14),
+      p(0.96, 0.07, 0.08),
       p(1.00, 0.00, 0.00),
     ]},
-  // 11 ─ Wide Cruiser ── broad saucer-like mass, engine flanks ─────────────
-  { name: 'Wide Cruiser', col: [210, 155, 85],
+  // 11 ─ F-15 Eagle ── wide LERX, large delta, twin-nacelle tail ────────────────
+  { name: 'F-15 Eagle', col: [185, 140, 80],
     profile: [
       p(0.00, 0.00, 0.00),
-      p(0.07, 0.32, 0.26, 0.0, 0.10),
-      p(0.18, 0.68, 0.46, 0.0, 0.18),
-      p(0.38, 0.90, 0.58, 0.18, 0.22),
-      p(0.58, 0.84, 0.55, 0.18, 0.14),
-      p(0.76, 0.62, 0.40),
-      p(0.91, 0.30, 0.26),
-      p(1.00, 0.08, 0.10),
+      p(0.06, 0.06, 0.06),
+      p(0.16, 0.15, 0.12, 0.05, 0.16),
+      p(0.28, 0.23, 0.17, 0.72, 0.24),
+      p(0.44, 0.24, 0.18, 1.00, 0.20),
+      p(0.58, 0.21, 0.16, 0.62, 0.12),
+      p(0.68, 0.22, 0.15, 0.22, 0.06),
+      p(0.80, 0.20, 0.14, 0.24),
+      p(0.90, 0.12, 0.12),
+      p(1.00, 0.00, 0.00),
     ]},
 ];
 const N_SHAPES = SHAPES.length;
@@ -385,10 +390,10 @@ function transformAndProject() {
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
-// Light direction (view-space, not affected by auto-rotation — stays constant
-// relative to the camera so shading changes meaningfully as the model spins)
+// Light direction: beam direction FROM light TO scene (view-space, fixed).
+// (0.50, -0.70, 0.50) → light is above-left-front of camera, illuminates TOP surface.
 const LIGHT = (() => {
-  const v = [0.50, 0.72, -0.48];
+  const v = [0.50, -0.70, 0.50];
   const m = Math.hypot(...v);
   return v.map(x => x / m);
 })();
@@ -397,79 +402,114 @@ const LIGHT = (() => {
 const sortBuf = new Float64Array(nTris);   // depth per triangle
 const triOrder = new Int32Array(nTris);    // index order after sort
 
-let prevColorA = [0, 0, 0], prevColorB = [0, 0, 0], prevAlpha = -1;
-
 function render(iA, iB, alpha) {
-  ctx.fillStyle = '#040509';
+  // ── Background: deep space gradient ───────────────────────────────────────
+  const bgGrad = ctx.createRadialGradient(W * 0.5, H * 0.42, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.75);
+  bgGrad.addColorStop(0,   '#0c1228');
+  bgGrad.addColorStop(0.55, '#060812');
+  bgGrad.addColorStop(1,    '#020308');
+  ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // Blended base color
+  // ── Blended base color ─────────────────────────────────────────────────────
   const cA = SHAPES[iA].col, cB = SHAPES[iB].col;
   const bR = lerp(cA[0], cB[0], alpha);
   const bG = lerp(cA[1], cB[1], alpha);
-  const bB = lerp(cA[2], cB[2], alpha);
+  const bBc = lerp(cA[2], cB[2], alpha);
 
   const lx = LIGHT[0], ly = LIGHT[1], lz = LIGHT[2];
   let visCount = 0;
 
+  // ── Back-face cull + depth collect ────────────────────────────────────────
   for (let i = 0; i < nTris; i++) {
     const i0 = TRIS[i*3], i1 = TRIS[i*3+1], i2 = TRIS[i*3+2];
-    // Face normal from transformed vertices
     const ax = tvx[i1]-tvx[i0], ay = tvy[i1]-tvy[i0], az = tvz[i1]-tvz[i0];
     const bx = tvx[i2]-tvx[i0], by = tvy[i2]-tvy[i0], bz = tvz[i2]-tvz[i0];
-    const nx = ay*bz - az*by;
-    const ny = az*bx - ax*bz;
     const nz = ax*by - ay*bx;
-    const nl = Math.sqrt(nx*nx + ny*ny + nz*nz);
-    if (nl < 1e-9) continue;
-
-    // Backface cull: camera looks along +Z → front faces have nz < 0
-    if (nz > 0) continue;
-
-    const depth = (tvz[i0] + tvz[i1] + tvz[i2]) / 3;
-    sortBuf[visCount]  = depth;
+    const nl2 = (ay*bz-az*by)**2 + (az*bx-ax*bz)**2 + nz*nz;
+    if (nl2 < 1e-18 || nz > 0) continue;
+    sortBuf[visCount]  = (tvz[i0] + tvz[i1] + tvz[i2]) / 3;
     triOrder[visCount] = i;
     visCount++;
   }
 
-  // Painter's algorithm: largest Z (farthest) first
-  // Simple insertion-style partial sort is fine for ~1300 visible tris
-  // Use plain JS sort with typed-array keys
+  // Painter's algorithm: farthest first
   const visible = Array.from({length: visCount}, (_, k) => k);
   visible.sort((a, b) => sortBuf[b] - sortBuf[a]);
 
+  // ── Shadow pass: offset copy of aircraft ──────────────────────────────────
+  const sMin = Math.min(W, H);
+  const sDX = sMin * 0.048;   // rightward (light from upper-left)
+  const sDY = sMin * 0.092;   // downward
+  ctx.save();
+  ctx.globalAlpha = 0.26;
+  ctx.fillStyle = '#000408';
   for (let vi = 0; vi < visCount; vi++) {
-    const i = triOrder[visible[vi]];
+    const i  = triOrder[visible[vi]];
+    const i0 = TRIS[i*3], i1 = TRIS[i*3+1], i2 = TRIS[i*3+2];
+    ctx.beginPath();
+    ctx.moveTo(spx[i0]+sDX, spy[i0]+sDY);
+    ctx.lineTo(spx[i1]+sDX, spy[i1]+sDY);
+    ctx.lineTo(spx[i2]+sDX, spy[i2]+sDY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // ── Main shading pass ─────────────────────────────────────────────────────
+  // Half-vector for Blinn-Phong: H = normalize(V + L)
+  //   V = (0,0,-1) toward camera, L = (-lx,-ly,-lz) toward light
+  //   H = normalize(-lx, -ly, -lz-1)
+  const hvx = -lx, hvy = -ly, hvz = -lz - 1.0;
+  const hvm = Math.sqrt(hvx*hvx + hvy*hvy + hvz*hvz);
+
+  for (let vi = 0; vi < visCount; vi++) {
+    const i  = triOrder[visible[vi]];
     const i0 = TRIS[i*3], i1 = TRIS[i*3+1], i2 = TRIS[i*3+2];
 
-    // Face normal (recompute — we discarded it earlier)
+    // Face normal (recompute from view-space verts)
     const ax = tvx[i1]-tvx[i0], ay = tvy[i1]-tvy[i0], az = tvz[i1]-tvz[i0];
     const bx = tvx[i2]-tvx[i0], by = tvy[i2]-tvy[i0], bz = tvz[i2]-tvz[i0];
     const nx = ay*bz - az*by;
     const ny = az*bx - ax*bz;
     const nz = ax*by - ay*bx;
     const nl = Math.sqrt(nx*nx + ny*ny + nz*nz);
-
-    // Diffuse + ambient + specular
     const nnx = nx/nl, nny = ny/nl, nnz = nz/nl;
-    const diff    = Math.max(0, -(nnx*lx + nny*ly + nnz*lz));
-    // Blinn-Phong specular: half-vector between light and camera (0,0,-1)
-    const hx = lx, hy = ly, hz = (lz - 1) * 0.5;  // approx half-vec
-    const hm = Math.sqrt(hx*hx + hy*hy + hz*hz);
-    const spec = Math.pow(Math.max(0, -(nnx*hx/hm + nny*hy/hm + nnz*hz/hm)), 28) * 0.45;
 
-    const shade = 0.14 + 0.76 * diff + spec;
-    const r = Math.round(bR * shade + spec * 80);
-    const g = Math.round(bG * shade + spec * 80);
-    const b = Math.round(bB * shade + spec * 80);
+    // Key diffuse (Lambert)
+    const diff = Math.max(0, -(nnx*lx + nny*ly + nnz*lz));
+
+    // Hemisphere ambient: top faces (nny > 0 in view-space = facing sky) get a
+    // cool blue-grey tint; bottom faces stay very dark.
+    const hemi = (nny + 1) * 0.5;                 // 0 = down, 1 = up
+
+    // Rim light: silhouette edges (nnz ≈ 0) glow with a cool backlight.
+    // Modulated so only top/upper faces rim-glow (not underbelly).
+    const rim = Math.pow(Math.max(0, 1 - Math.abs(nnz)), 4.5) *
+                Math.max(0, 0.3 + nny * 0.7) * 0.62;
+
+    // Specular (Blinn-Phong)
+    const spec = Math.pow(Math.max(0, (nnx*hvx + nny*hvy + nnz*hvz) / hvm), 38) * 0.62;
+
+    // Combine
+    const amb = 0.06 + hemi * 0.14;   // 0.06 (underside) … 0.20 (top)
+    const tot = amb + 0.72 * diff;
+    const r = clamp(Math.round(bR  * tot + rim * 88  + spec * 115), 0, 255);
+    const g = clamp(Math.round(bG  * tot + rim * 108 + spec * 115), 0, 255);
+    const b = clamp(Math.round(bBc * tot + rim * 145 + spec * 115), 0, 255);
 
     ctx.beginPath();
     ctx.moveTo(spx[i0], spy[i0]);
     ctx.lineTo(spx[i1], spy[i1]);
     ctx.lineTo(spx[i2], spy[i2]);
     ctx.closePath();
-    ctx.fillStyle = `rgb(${clamp(r,0,255)},${clamp(g,0,255)},${clamp(b,0,255)})`;
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.fill();
+
+    // Thin seam darkening — fills micro-gaps and gives the mesh solidity
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+    ctx.lineWidth   = 0.5;
+    ctx.stroke();
   }
 
   drawCPMarkers();
