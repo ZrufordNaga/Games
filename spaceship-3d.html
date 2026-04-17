@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spaceship Builder</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; overflow:hidden; }
+body {
+  background:#06060e;
+  display:flex; height:100vh;
+  font-family:'Courier New',monospace; color:#667788;
+  user-select:none;
+}
+#grid-panel {
+  width:440px; flex-shrink:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:8px;
+  border-right:1px solid #0d1018;
+}
+#grid-panel canvas { display:block; cursor:crosshair; image-rendering:pixelated; }
+.gctrl { display:flex; gap:6px; }
+button {
+  background:#0d0d1a; color:#556677;
+  border:1px solid #1e2a3a; padding:5px 12px;
+  font-family:'Courier New',monospace; font-size:10px;
+  letter-spacing:2px; text-transform:uppercase; cursor:pointer;
+}
+button:hover { border-color:#3a6a8a; color:#aaccdd; }
+#arch-info {
+  font-size:10px; letter-spacing:2px; color:#2a4455;
+  text-align:center; line-height:2;
+}
+#arch-info .v { color:#4a8aaa; }
+#view-panel { flex:1; position:relative; overflow:hidden; }
+#viewCanvas { display:block; cursor:grab; }
+#viewCanvas.drag { cursor:grabbing; }
+#hud {
+  position:absolute; top:10px; left:12px; pointer-events:none;
+  font:11px/1.9 'Courier New',monospace; color:#9cf;
+  background:rgba(0,4,16,.65); padding:8px 12px; border-radius:6px;
+  border:1px solid rgba(80,140,255,.12); max-width:220px;
+}
+#hud .hl  { color:#cef; font-weight:bold; }
+#hud .dim { color:#467; }
+</style>
+</head>
+<body>
+<div id="grid-panel">
+  <canvas id="gridCanvas"></canvas>
+  <div class="gctrl">
+    <button onclick="randomizePlayer()">&#10227; Player</button>
+    <button onclick="clearPlayer()">&#10005; Clear</button>
+    <button onclick="randomizeEnemy()">&#10227; Enemy</button>
+  </div>
+  <div id="arch-info">
+    <span class="dim">ENEMY</span> <span class="v" id="earch">&#8211;</span>
+    &nbsp;&nbsp;
+    <span class="dim">PLAYER</span> <span class="v" id="parch">&#8211;</span>
+  </div>
+</div>
+<div id="view-panel">
+  <canvas id="viewCanvas"></canvas>
+  <div id="hud"></div>
+</div>
+
+<script>
+'use strict';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const lerp    = (a, b, t) => a + (b - a) * t;
+const clamp   = (x, lo, hi) => x < lo ? lo : x > hi ? hi : x;
+const easeOut = t => 1 - Math.pow(1 - t, 2.5);
+
+// ─── Canvases ────────────────────────────────────────────────────────────────
+const gridCanvas = document.getElementById('gridCanvas');
+const gCtx       = gridCanvas.getContext('2d');
+const viewCanvas = document.getElementById('viewCanvas');
+const vCtx       = viewCanvas.getContext('2d');
+
+const G = 20, CS = 22;          // 20×20 grid, 22 px per cell → 440 px
+gridCanvas.width  = G * CS;
+gridCanvas.height = G * CS;
+
+let VW = 0, VH = 0;
+function resizeView() {
+  const vp = document.getElementById('view-panel');
+  VW = viewCanvas.width  = vp.clientWidth;
+  VH = viewCanvas.height = window.innerHeight;
+}
+resizeView();
+window.addEventListener('resize', resizeView);
+
+// ─── Grid color palette ──────────────────────────────────────────────────────
+const C = {
+  bg:'#06060e', gridLine:'#0e1018', gridX:'#0b0c14',
+  hull:'#0a0a0d', divider:'#1a3040',
+  cockpit:'#d4aa00', weapon:'#9922cc', reactor:'#119944',
+  intake:'#00bbcc', thruster:'#e06600', engine:'#cc1111', wing:'#1155bb',
+};
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let playerTroops = new Set(), enemyTroops  = new Set();
+let playerHull   = new Set(), enemyHull    = new Set();
+let playerArch   = 'NONE',   enemyArch    = 'NONE';
+
+// ─── Seeded RNG ──────────────────────────────────────────────────────────────
+function makeRng(seed) {
+  let s = (seed >>> 0) || 0xdeadbeef;
+  return () => {
+    s = Math.imul(s ^ (s >>> 17), 0xbf324c81) >>> 0;
+    s = Math.imul(s ^ (s >>> 13), 0x9e3779b9) >>> 0;
+    s ^= s >>> 16;
+    return (s >>> 0) / 0x100000000;
+  };
+}
+function seedFromTroops(troops) {
+  let s = 0x12345678;
+  for (const k of [...troops].sort()) {
+    const [r, c] = k.split(',').map(Number);
+    s = Math.imul(s ^ (r * 997 + c * 1009), 0x6c62272e) | 0;
+  }
+  return s >>> 0;
+}
+
+// ─── Standalone envW — top-view normalised half-width (0..1) for each arch ──
+function envW(arch, t) {
+  switch (arch) {
+    case 'FIGHTER':
+      if (t < 0.20) return t / 0.20 * 0.40;
+      if (t < 0.45) return 0.40 + (t - 0.20) / 0.25 * 0.60;
+      if (t < 0.70) return 1.00 - (t - 0.45) / 0.25 * 0.35;
+      return 0.65 + (t - 0.70) / 0.30 * 0.15;
+    case 'BOMBER':
+      if (t < 0.25) return t / 0.25 * 0.75;
+      if (t < 0.65) return 0.75 + (t - 0.25) / 0.40 * 0.25;
+      return 1.00 - (t - 0.65) / 0.35 * 0.55;
+    case 'WING':
+      if (t < 0.12) return t / 0.12 * 0.20;
+      if (t < 0.45) return 0.20 + (t - 0.12) / 0.33 * 0.80;
+      return 1.00 - (t - 0.45) / 0.55 * 0.65;
+    case 'ROCKET':
+      if (t < 0.15) return t / 0.15 * 0.70;
+      if (t < 0.55) return 0.70 + (t - 0.15) / 0.40 * 0.30;
+      return 1.00 - (t - 0.55) / 0.45 * 0.55;
+    case 'DRONE':
+      return 0.12;
+    case 'DELTA':
+      if (t < 0.10) return t / 0.10 * 0.12;
+      return 0.12 + (t - 0.10) / 0.90 * 0.88;
+    case 'SAUCER': {
+      const n = 2 * t - 1;
+      return Math.sqrt(Math.max(0, 1 - n * n)) * 0.85 + 0.15;
+    }
+    case 'STINGRAY':
+      if (t < 0.05) return t / 0.05 * 0.10;
+      return 0.10 + Math.sqrt((t - 0.05) / 0.95) * 0.90;
+    case 'CARRIER':
+      if (t < 0.10) return t / 0.10 * 0.82;
+      if (t < 0.88) return 0.82 + (t - 0.10) / 0.78 * 0.18;
+      return 1.00 - (t - 0.88) / 0.12 * 0.30;
+    case 'INTERCEPTOR':
+      if (t < 0.08) return t / 0.08 * 0.42;
+      if (t < 0.55) return 0.42 + (t - 0.08) / 0.47 * 0.28;
+      if (t < 0.80) return 0.70 - (t - 0.55) / 0.25 * 0.20;
+      return 0.50 + (t - 0.80) / 0.20 * 0.25;
+    case 'CRUISER':
+      if (t < 0.12) return t / 0.12 * 0.65;
+      if (t < 0.75) return 0.65 + (t - 0.12) / 0.63 * 0.35;
+      return 1.00 - (t - 0.75) / 0.25 * 0.35;
+    case 'HAMMERHEAD':
+      if (t < 0.18) return 1.00 - (t / 0.18) * 0.50;
+      if (t < 0.50) return 0.50 - (t - 0.18) / 0.32 * 0.25;
+      return 0.25 + (t - 0.50) / 0.50 * 0.75;
+    case 'JAVELIN':
+      if (t < 0.07) return t / 0.07 * 0.14;
+      if (t > 0.93) return (1 - t) / 0.07 * 0.14;
+      return 0.05;
+    case 'RAPTOR':
+      if (t < 0.08) return t / 0.08 * 0.18;
+      if (t < 0.55) return 0.18 + (t - 0.08) / 0.47 * 0.82;
+      if (t < 0.80) return 1.00;
+      return 1.00 - (t - 0.80) / 0.20 * 0.48;
+    case 'SLAB':
+      if (t < 0.14) return 0.30 + t / 0.14 * 0.70;
+      if (t < 0.86) return 1.00;
+      return 1.00 - (t - 0.86) / 0.14 * 0.55;
+    case 'WEDGE':
+      if (t < 0.08) return 0.84 + t / 0.08 * 0.16;
+      if (t < 0.38) return 1.00 - (t - 0.08) / 0.30 * 0.06;
+      return 0.94 - (t - 0.38) / 0.62 * 0.82;
+    case 'ARROWHEAD':
+      if (t < 0.44) return t / 0.44;
+      return 1.00 - (t - 0.44) / 0.56;
+    case 'TEARDROP':
+      if (t < 0.20) return 0.12 + t / 0.20 * 0.88;
+      return 1.00 - Math.pow((t - 0.20) / 0.80, 0.55) * 0.92;
+    case 'SCORPION':
+      if (t < 0.10) return 0.18 + t / 0.10 * 0.30;
+      if (t < 0.42) return 0.48 + (t - 0.10) / 0.32 * 0.52;
+      if (t < 0.72) return 1.00 - (t - 0.42) / 0.30 * 0.76;
+      return 0.24 - (t - 0.72) / 0.28 * 0.18;
+    case 'MANTIS':
+      return 0.07;
+    default: // NONE: rounded teardrop
+      if (t < 0.18) return t / 0.18 * 0.55;
+      if (t < 0.50) return 0.55 + (t - 0.18) / 0.32 * 0.45;
+      if (t < 0.78) return 1.00 - (t - 0.50) / 0.28 * 0.35;
+      return 0.65 - (t - 0.78) / 0.22 * 0.30;
+  }
+}
+
+// ─── Hull generation (from spaceship-grid.html, uses standalone envW) ────────
+function generateHull(troops, side) {
+  if (!troops.size) return { hull: new Set(), archetype: 'NONE' };
+  const isPlayer = side === 'player';
+  const rng = makeRng(seedFromTroops(troops) ^ (isPlayer ? 0xAAAA : 0x5555));
+
+  const seenKeys = new Set(), unique = [];
+  for (const k of troops) {
+    const [r, c] = k.split(',').map(Number);
+    const depth  = isPlayer ? r - 10 : 9 - r;
+    const absCol = Math.abs(c - 9.5);
+    const key    = `${depth},${Math.round(absCol * 10)}`;
+    if (!seenKeys.has(key)) { seenKeys.add(key); unique.push({ depth, absCol }); }
+  }
+
+  const n = unique.length;
+  const depths = unique.map(p => p.depth), absCols = unique.map(p => p.absCol);
+  const minD = Math.min(...depths), maxD = Math.max(...depths);
+  const maxA = Math.max(...absCols);
+  const dSpan = Math.max(0, maxD - minD);
+  const aspect = dSpan === 0 ? 99 : maxA / dSpan;
+
+  let deltaScore = 0;
+  if (n >= 2 && dSpan >= 1) {
+    const s = [...unique].sort((a, b) => a.depth - b.depth);
+    let w = 0;
+    for (let i = 1; i < s.length; i++) if (s[i].absCol > s[i-1].absCol) w++;
+    deltaScore = w / (s.length - 1);
+  }
+  let invertedDeltaScore = 0;
+  if (n >= 2 && dSpan >= 1) {
+    const s = [...unique].sort((a, b) => a.depth - b.depth);
+    let w = 0;
+    for (let i = 1; i < s.length; i++) if (s[i].absCol < s[i-1].absCol) w++;
+    invertedDeltaScore = w / (s.length - 1);
+  }
+  let isSymmetricMid = false;
+  if (n >= 3 && dSpan >= 2) {
+    const s = [...unique].sort((a, b) => a.depth - b.depth);
+    const midA = s[Math.floor(s.length / 2)].absCol;
+    isSymmetricMid = midA > s[0].absCol && midA > s[s.length-1].absCol && midA >= 2;
+  }
+
+  let archetype;
+  if      (n === 1 && maxA < 1.5)                                archetype = 'ROCKET';
+  else if (dSpan >= 7 && maxA < 2)                               archetype = 'JAVELIN';
+  else if (deltaScore >= 0.65 && dSpan >= 2 && maxA >= 7)        archetype = 'STINGRAY';
+  else if (deltaScore >= 0.65 && dSpan >= 2)                     archetype = 'DELTA';
+  else if (deltaScore >= 0.65 && dSpan === 1)                    archetype = 'RAPTOR';
+  else if (dSpan === 0 && maxA >= 6.5)                           archetype = 'SAUCER';
+  else if (maxA >= 4.0 && dSpan === 0)                           archetype = 'DRONE';
+  else if (dSpan === 0 && n >= 2)                                archetype = 'SLAB';
+  else if (invertedDeltaScore >= 0.65 && dSpan >= 2 && maxA >= 5) archetype = 'WEDGE';
+  else if (invertedDeltaScore >= 0.65 && dSpan >= 2 && maxA >= 3) archetype = 'HAMMERHEAD';
+  else if (dSpan >= 3 && maxA >= 6)                              archetype = 'CARRIER';
+  else if (aspect >= 2.0 || (n >= 2 && maxA >= 6))               archetype = 'WING';
+  else if (dSpan >= 5 && maxA < 3)                               archetype = 'INTERCEPTOR';
+  else if (dSpan >= 3 && maxA <= 2.5)                            archetype = 'ROCKET';
+  else if (isSymmetricMid && dSpan >= 2)                         archetype = 'ARROWHEAD';
+  else if (dSpan >= 4 && maxA >= 3.5 && aspect <= 0.8)           archetype = 'TEARDROP';
+  else if (dSpan >= 4 && maxA >= 2.5 && aspect < 0.9)            archetype = 'CRUISER';
+  else if (n >= 4 && dSpan >= 2 && maxA >= 4)                    archetype = 'MANTIS';
+  else if (n >= 5 && dSpan >= 2 && maxA >= 2)                    archetype = 'SCORPION';
+  else if (aspect >= 1.0 && maxA >= 2.5)                         archetype = 'BOMBER';
+  else                                                            archetype = 'FIGHTER';
+
+  const noseMargin = 1;
+  const tailM = { FIGHTER:2,BOMBER:2,WING:2,ROCKET:3,DRONE:1,DELTA:2,SAUCER:1,
+    STINGRAY:2,CARRIER:2,INTERCEPTOR:3,CRUISER:2,HAMMERHEAD:2,
+    JAVELIN:2,RAPTOR:2,SLAB:1,WEDGE:2,ARROWHEAD:2,TEARDROP:2,SCORPION:2,MANTIS:1 };
+  const sideM = { FIGHTER:2,BOMBER:2,WING:1,ROCKET:1,DRONE:1,DELTA:1,SAUCER:1,
+    STINGRAY:1,CARRIER:1,INTERCEPTOR:1,CRUISER:2,HAMMERHEAD:1,
+    JAVELIN:1,RAPTOR:1,SLAB:2,WEDGE:1,ARROWHEAD:2,TEARDROP:2,SCORPION:2,MANTIS:1 };
+  const tailMargin = tailM[archetype] || 2, sideMargin = sideM[archetype] || 2;
+  const maxHalfW = Math.min(9, Math.max(1, Math.ceil(maxA) + sideMargin));
+  const shipDepth = archetype === 'SAUCER'
+    ? Math.min(9, Math.max(5, maxHalfW))
+    : Math.min(9, Math.max(3, dSpan + noseMargin + tailMargin));
+  const depthOffset = noseMargin - minD;
+  const hullBase    = minD - noseMargin;
+
+  const minWidthForRow = new Array(shipDepth).fill(0);
+  for (const p of unique) {
+    const idx = Math.round(p.depth + depthOffset);
+    if (idx >= 0 && idx < shipDepth)
+      minWidthForRow[idx] = Math.max(minWidthForRow[idx], Math.ceil(p.absCol));
+  }
+  const widths = [];
+  for (let i = 0; i < shipDepth; i++) {
+    const t = shipDepth <= 1 ? 0.5 : i / (shipDepth - 1);
+    const base = envW(archetype, t) * maxHalfW;
+    const jitter = (rng() - 0.5) * 0.8;
+    widths.push(Math.max(minWidthForRow[i], Math.max(1, Math.min(9, Math.round(base + jitter)))));
+  }
+
+  const hull = new Set();
+  for (let i = 0; i < shipDepth; i++) {
+    const row = isPlayer ? 10 + hullBase + i : 9 - hullBase - i;
+    if (isPlayer  && (row < 10 || row >= G)) continue;
+    if (!isPlayer && (row > 9  || row < 0))  continue;
+    const w = widths[i];
+    for (let c = 10 - w; c <= 9 + w; c++) if (c >= 0 && c < G) hull.add(`${row},${c}`);
+  }
+
+  // Archetype-specific hull extensions (same as spaceship-grid.html)
+  if (archetype === 'DRONE') {
+    for (const p of unique) {
+      const ai = Math.round(p.depth + depthOffset);
+      if (ai < 0 || ai >= shipDepth) continue;
+      const ar = isPlayer ? 10 + hullBase + ai : 9 - hullBase - ai;
+      if (isPlayer && (ar < 10 || ar >= G)) continue;
+      if (!isPlayer && (ar > 9 || ar < 0))  continue;
+      const aR = Math.min(18, Math.round(9.5 + p.absCol + 1)), aL = Math.max(1, 19 - aR);
+      for (let c = aL; c <= aR; c++) hull.add(`${ar},${c}`);
+      const tR = aR, tL = Math.max(aL, aR - 2), mR = 19 - tL, mL = 19 - tR;
+      for (const dr of [-1, 1]) {
+        const adj = isPlayer ? ar + dr : ar - dr;
+        if (adj < 0 || adj >= G || (isPlayer && adj < 10) || (!isPlayer && adj > 9)) continue;
+        for (let c = tL; c <= tR; c++) hull.add(`${adj},${c}`);
+        for (let c = mL; c <= mR; c++) hull.add(`${adj},${c}`);
+      }
+    }
+  }
+  if (archetype === 'FIGHTER' && shipDepth >= 4) {
+    for (let k = shipDepth - 2; k < shipDepth; k++) {
+      const row = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9 || row < 0))  continue;
+      const nw = widths[k] + 1, lo = 10 - nw - 1, hi = 9 + nw + 1;
+      if (lo >= 0) hull.add(`${row},${lo}`);
+      if (hi < G)  hull.add(`${row},${hi}`);
+    }
+  }
+  if (archetype === 'CRUISER' && shipDepth >= 5) {
+    for (let k = shipDepth - 3; k < shipDepth; k++) {
+      const row = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9 || row < 0))  continue;
+      const pw = widths[k] + 2, lo = Math.max(0, 10-pw-2), hi = Math.min(G-1, 9+pw+2);
+      hull.add(`${row},${lo}`); hull.add(`${row},${lo+1}`);
+      hull.add(`${row},${hi}`); hull.add(`${row},${hi-1}`);
+    }
+  }
+  if (archetype === 'INTERCEPTOR') {
+    const nr = isPlayer ? 10 + hullBase - 1 : 9 - hullBase + 1;
+    if (nr >= 0 && nr < G) {
+      if (isPlayer  && nr >= 10) { hull.add(`${nr},9`); hull.add(`${nr},10`); }
+      if (!isPlayer && nr <=  9) { hull.add(`${nr},9`); hull.add(`${nr},10`); }
+    }
+  }
+  if (archetype === 'CARRIER') {
+    for (let ext = 1; ext <= 2; ext++) {
+      const dr = isPlayer ? 10 + hullBase - ext : 9 - hullBase + ext;
+      if (dr < 0 || dr >= G || (isPlayer && dr < 10) || (!isPlayer && dr > 9)) continue;
+      const dw = Math.max(1, Math.round(maxHalfW * (0.5 - ext * 0.15)));
+      for (let c = 10 - dw; c <= 9 + dw; c++) if (c >= 0 && c < G) hull.add(`${dr},${c}`);
+    }
+  }
+  if (archetype === 'SAUCER' && shipDepth >= 3) {
+    const eq = Math.floor(shipDepth / 2);
+    for (let di = -1; di <= 1; di++) {
+      const k = eq + di; if (k < 0 || k >= shipDepth) continue;
+      const row = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9 || row < 0))  continue;
+      const ew = Math.min(9, widths[k] + 1);
+      for (let c = 10 - ew; c <= 9 + ew; c++) if (c >= 0 && c < G) hull.add(`${row},${c}`);
+    }
+  }
+  if (archetype === 'HAMMERHEAD') {
+    for (let k = 0; k < Math.min(2, shipDepth); k++) {
+      const row = isPlayer ? 10 + hullBase + k : 9 - hullBase - k;
+      if (isPlayer && (row < 10 || row >= G)) continue;
+      if (!isPlayer && (row > 9 || row < 0))  continue;
+      const hw = Math.min(9, Math.round(maxHalfW * 0.85));
+      for (let c = 10 - hw; c <= 9 + hw; c++) if (c >= 0 && c < G) hull.add(`${row},${c}`);
+    }
+  }
+  if (archetype === 'STINGRAY') {
+    for (const p of unique) {
+      const ai = Math.round(p.depth + depthOffset);
+      if (ai < 0 || ai >= shipDepth) continue;
+      const ar = isPlayer ? 10 + hullBase + ai : 9 - hullBase - ai;
+      if (isPlayer && (ar < 10 || ar >= G)) continue;
+      if (!isPlayer && (ar > 9 || ar < 0))  continue;
+      const tR = Math.min(G-1, Math.round(9.5 + p.absCol + 1)), tL = Math.max(0, 19 - tR);
+      for (const dr of [-1, 0, 1]) {
+        const adj = isPlayer ? ar + dr : ar - dr;
+        if (adj < 0 || adj >= G || (isPlayer && adj < 10) || (!isPlayer && adj > 9)) continue;
+        for (let c = tL;    c <= tR;    c++) hull.add(`${adj},${c}`);
+        for (let c = 19-tR; c <= 19-tL; c++) hull.add(`${adj},${c}`);
+      }
+    }
+  }
+  if (archetype === 'JAVELIN') {
+    const nr = isPlayer ? 10 + hullBase - 1 : 9 - hullBase + 1;
+    if (nr >= 0 && nr < G) {
+      if (isPlayer  && nr >= 10) { hull.add(`${nr},9`); hull.add(`${nr},10`); }
+      if (!isPlayer && nr <=  9) { hull.add(`${nr},9`); hull.add(`${nr},10`); }
+    }
+  }
+  if (archetype === 'SCORPION') {
+    for (let ext = 0; ext <= 1; ext++) {
+      const sr = isPlayer ? 10 + hullBase + shipDepth + ext : 9 - hullBase - shipDepth - ext;
+      if (sr < 0 || sr >= G || (isPlayer && sr < 10) || (!isPlayer && sr > 9)) continue;
+      hull.add(`${sr},9`); hull.add(`${sr},10`);
+    }
+  }
+  if (archetype === 'MANTIS') {
+    for (const p of unique) {
+      if (p.absCol < 3) continue;
+      const ai = Math.round(p.depth + depthOffset);
+      if (ai < 0 || ai >= shipDepth) continue;
+      const ar = isPlayer ? 10 + hullBase + ai : 9 - hullBase - ai;
+      if (isPlayer && (ar < 10 || ar >= G)) continue;
+      if (!isPlayer && (ar > 9 || ar < 0))  continue;
+      const aR = Math.min(G-1, Math.round(9.5 + p.absCol + 1)), aL = Math.max(0, 19 - aR);
+      for (let c = aL;    c <= aR;    c++) hull.add(`${ar},${c}`);
+      for (let c = 19-aR; c <= 19-aL; c++) hull.add(`${ar},${c}`);
+    }
+  }
+  return { hull, archetype };
+}
+
+// ─── Grid drawing ─────────────────────────────────────────────────────────────
+function inHull(r, c, hull) { return hull.has(`${r},${c}`); }
+function getSectors(r, c, h) {
+  return { top:inHull(r-1,c,h), right:inHull(r,c+1,h), bottom:inHull(r+1,c,h), left:inHull(r,c-1,h) };
+}
+function isInterior(r, c, h) {
+  return inHull(r-1,c,h) && inHull(r+1,c,h) && inHull(r,c-1,h) && inHull(r,c+1,h);
+}
+function tri(cx, cy, dir, color, inset) {
+  const x = cx*CS, y = cy*CS, p = inset||0, mx = x+CS/2, my = y+CS/2;
+  gCtx.fillStyle = color;
+  gCtx.beginPath();
+  switch (dir) {
+    case 'top':    gCtx.moveTo(x+p,    y+p);    gCtx.lineTo(x+CS-p,y+p);    gCtx.lineTo(mx,    my-p); break;
+    case 'right':  gCtx.moveTo(x+CS-p, y+p);    gCtx.lineTo(x+CS-p,y+CS-p); gCtx.lineTo(mx+p,  my);   break;
+    case 'bottom': gCtx.moveTo(x+CS-p, y+CS-p); gCtx.lineTo(x+p,   y+CS-p); gCtx.lineTo(mx,    my+p); break;
+    case 'left':   gCtx.moveTo(x+p,    y+CS-p); gCtx.lineTo(x+p,   y+p);    gCtx.lineTo(mx-p,  my);   break;
+  }
+  gCtx.closePath(); gCtx.fill();
+}
+function drawHullCell(c, r, s) {
+  const hc = C.hull;
+  if (s.top)    tri(c, r, 'top',    hc);
+  if (s.right)  tri(c, r, 'right',  hc);
+  if (s.bottom) tri(c, r, 'bottom', hc);
+  if (s.left)   tri(c, r, 'left',   hc);
+  gCtx.fillStyle = hc;
+  gCtx.fillRect(c*CS + CS/2 - 2, r*CS + CS/2 - 2, 4, 4);
+}
+function hullRowBounds(hull, isPlayer) {
+  let nr = isPlayer ? 19 : 0, tr = isPlayer ? 10 : 9;
+  for (const k of hull) {
+    const r = +k.split(',')[0];
+    if (isPlayer) { if (r < nr) nr = r; if (r > tr) tr = r; }
+    else          { if (r > nr) nr = r; if (r < tr) tr = r; }
+  }
+  return { noseRow: nr, tailRow: tr };
+}
+function moduleColor(noseP, colDist) {
+  const nose = noseP < 0.15 ? C.cockpit : noseP < 0.45 ? C.weapon : C.reactor;
+  const tail = noseP > 0.82 ? C.engine  : noseP > 0.62 ? C.thruster : noseP > 0.40 ? C.reactor : C.weapon;
+  const side = colDist < 0.25 ? C.reactor
+             : colDist < 0.55 ? (noseP < 0.5 ? C.weapon  : C.reactor)
+             : colDist < 0.80 ? (noseP < 0.5 ? C.intake  : C.thruster)
+             : C.wing;
+  return { nose, tail, side };
+}
+function drawModuleCell(c, r, isPlayer, bounds) {
+  const span  = Math.max(1, Math.abs(bounds.tailRow - bounds.noseRow));
+  const noseP = clamp(isPlayer ? (r - bounds.noseRow)/span : (bounds.noseRow - r)/span, 0, 1);
+  const mc    = moduleColor(noseP, Math.abs(c - 9.5) / 9.5);
+  const nd = isPlayer ? 'top' : 'bottom', td = isPlayer ? 'bottom' : 'top';
+  tri(c, r, nd, mc.nose, 4); tri(c, r, td, mc.tail, 4);
+  tri(c, r, 'left', mc.side, 4); tri(c, r, 'right', mc.side, 4);
+}
+function drawTroopMarker(c, r, isPlayer) {
+  const x = c*CS + CS/2, y = r*CS + CS/2;
+  const grd = gCtx.createRadialGradient(x, y, 1, x, y, CS * 0.45);
+  grd.addColorStop(0, isPlayer ? 'rgba(80,180,255,0.35)' : 'rgba(255,80,80,0.35)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  gCtx.fillStyle = grd;
+  gCtx.beginPath(); gCtx.arc(x, y, CS*0.45, 0, Math.PI*2); gCtx.fill();
+  gCtx.fillStyle = isPlayer ? '#88ccff' : '#ff8888';
+  gCtx.beginPath(); gCtx.arc(x, y, 3, 0, Math.PI*2); gCtx.fill();
+  gCtx.strokeStyle = isPlayer ? 'rgba(100,200,255,0.7)' : 'rgba(255,100,100,0.7)';
+  gCtx.lineWidth = 0.8;
+  gCtx.beginPath();
+  gCtx.moveTo(x-6, y); gCtx.lineTo(x+6, y);
+  gCtx.moveTo(x, y-6); gCtx.lineTo(x, y+6);
+  gCtx.stroke();
+}
+function renderGrid() {
+  gCtx.fillStyle = C.bg; gCtx.fillRect(0, 0, G*CS, G*CS);
+
+  gCtx.strokeStyle = C.gridLine; gCtx.lineWidth = 0.5;
+  for (let i = 0; i <= G; i++) {
+    gCtx.beginPath(); gCtx.moveTo(i*CS, 0);    gCtx.lineTo(i*CS, G*CS); gCtx.stroke();
+    gCtx.beginPath(); gCtx.moveTo(0,    i*CS); gCtx.lineTo(G*CS, i*CS); gCtx.stroke();
+  }
+  gCtx.strokeStyle = C.gridX; gCtx.lineWidth = 0.3;
+  for (let r = 0; r < G; r++) for (let c = 0; c < G; c++) {
+    gCtx.beginPath();
+    gCtx.moveTo(c*CS,    r*CS);    gCtx.lineTo(c*CS+CS, r*CS+CS);
+    gCtx.moveTo(c*CS+CS, r*CS);    gCtx.lineTo(c*CS,    r*CS+CS);
+    gCtx.stroke();
+  }
+  gCtx.fillStyle = 'rgba(180,40,40,0.025)';  gCtx.fillRect(0, 0,     G*CS, 10*CS);
+  gCtx.fillStyle = 'rgba(40,120,180,0.025)'; gCtx.fillRect(0, 10*CS, G*CS, 10*CS);
+
+  for (const key of enemyHull)  { const [r,c]=key.split(',').map(Number); drawHullCell(c,r,getSectors(r,c,enemyHull)); }
+  for (const key of playerHull) { const [r,c]=key.split(',').map(Number); drawHullCell(c,r,getSectors(r,c,playerHull)); }
+
+  const eBounds = enemyHull.size  ? hullRowBounds(enemyHull,  false) : { noseRow:9,  tailRow:0 };
+  const pBounds = playerHull.size ? hullRowBounds(playerHull, true)  : { noseRow:10, tailRow:19 };
+  for (const key of enemyHull) {
+    const [r,c]=key.split(',').map(Number);
+    if (!isInterior(r,c,enemyHull) || enemyTroops.has(key)) continue;
+    const x=c*CS, y=r*CS;
+    gCtx.strokeStyle='#000'; gCtx.lineWidth=0.8;
+    gCtx.beginPath(); gCtx.moveTo(x,y); gCtx.lineTo(x+CS,y+CS); gCtx.moveTo(x+CS,y); gCtx.lineTo(x,y+CS); gCtx.stroke();
+    drawModuleCell(c, r, false, eBounds);
+  }
+  for (const key of playerHull) {
+    const [r,c]=key.split(',').map(Number);
+    if (!isInterior(r,c,playerHull) || playerTroops.has(key)) continue;
+    const x=c*CS, y=r*CS;
+    gCtx.strokeStyle='#000'; gCtx.lineWidth=0.8;
+    gCtx.beginPath(); gCtx.moveTo(x,y); gCtx.lineTo(x+CS,y+CS); gCtx.moveTo(x+CS,y); gCtx.lineTo(x,y+CS); gCtx.stroke();
+    drawModuleCell(c, r, true, pBounds);
+  }
+  for (const k of enemyTroops)  { const [r,c]=k.split(',').map(Number); drawTroopMarker(c,r,false); }
+  for (const k of playerTroops) { const [r,c]=k.split(',').map(Number); drawTroopMarker(c,r,true);  }
+
+  gCtx.strokeStyle=C.divider; gCtx.lineWidth=1.5; gCtx.setLineDash([4,6]);
+  gCtx.beginPath(); gCtx.moveTo(0,10*CS); gCtx.lineTo(G*CS,10*CS); gCtx.stroke();
+  gCtx.setLineDash([]);
+  gCtx.fillStyle='#1a3040'; gCtx.font='8px Courier New'; gCtx.textAlign='center';
+  gCtx.fillText('\u2500\u2500 BATTLE LINE \u2500\u2500', G*CS/2, 10*CS-2);
+
+  document.getElementById('parch').textContent = playerArch;
+  document.getElementById('earch').textContent = enemyArch;
+}
+
+// ─── Grid input ───────────────────────────────────────────────────────────────
+function gridClick(clientX, clientY) {
+  const rect = gridCanvas.getBoundingClientRect();
+  const c = Math.floor((clientX - rect.left)  * (G*CS / rect.width)  / CS);
+  const r = Math.floor((clientY - rect.top)   * (G*CS / rect.height) / CS);
+  if (c < 0 || c >= G || r < 10 || r >= G) return;
+  const key = `${r},${c}`;
+  if (playerTroops.has(key)) playerTroops.delete(key); else playerTroops.add(key);
+  regen();
+}
+gridCanvas.addEventListener('mousedown', e => gridClick(e.clientX, e.clientY));
+gridCanvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  gridClick(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: false });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3D SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════════
+const NS = 40, NR = 22, BODY_LEN = 5.0;
+const nVerts  = (NS + 1) * NR + 2;
+const noseCap = (NS + 1) * NR, tailCap = noseCap + 1;
+const nTris   = NS * NR * 2 + NR * 2;
+const TRIS    = new Int32Array(nTris * 3);
+(function buildTopo() {
+  let ti = 0;
+  for (let s = 0; s < NS; s++) for (let r = 0; r < NR; r++) {
+    const r2=(r+1)%NR;
+    const v00=s*NR+r, v01=s*NR+r2, v10=(s+1)*NR+r, v11=(s+1)*NR+r2;
+    TRIS[ti++]=v00; TRIS[ti++]=v01; TRIS[ti++]=v11;
+    TRIS[ti++]=v00; TRIS[ti++]=v11; TRIS[ti++]=v10;
+  }
+  for (let r=0; r<NR; r++) { TRIS[ti++]=noseCap; TRIS[ti++]=(r+1)%NR; TRIS[ti++]=r; }
+  const tb=NS*NR;
+  for (let r=0; r<NR; r++) { TRIS[ti++]=tailCap; TRIS[ti++]=tb+r; TRIS[ti++]=tb+(r+1)%NR; }
+})();
+
+const vx  = new Float32Array(nVerts), vy  = new Float32Array(nVerts), vz  = new Float32Array(nVerts);
+const tvx = new Float32Array(nVerts), tvy = new Float32Array(nVerts), tvz = new Float32Array(nVerts);
+const spx = new Float32Array(nVerts), spy = new Float32Array(nVerts);
+
+// ─── Archetype → 3D config: [maxRx, ryRatio, maxFl, maxTb] ──────────────────
+// maxRx:   peak half-width in world units
+// ryRatio: height / width (makes shapes flatter or rounder)
+// maxFl:   maximum wing-flare multiplier (flat swept wings)
+// maxTb:   maximum dorsal bulge
+const ARCH3D = {
+  FIGHTER:     [0.55, 0.65, 0.00, 0.10],
+  BOMBER:      [0.65, 0.48, 0.00, 0.04],
+  WING:        [0.50, 0.20, 1.60, 0.00],
+  ROCKET:      [0.42, 0.95, 0.00, 0.00],
+  DRONE:       [0.14, 0.80, 0.00, 0.00],
+  DELTA:       [0.38, 0.18, 2.20, 0.00],
+  SAUCER:      [0.85, 0.30, 0.00, 0.00],
+  STINGRAY:    [0.32, 0.15, 2.60, 0.00],
+  CARRIER:     [0.80, 0.26, 0.00, 0.00],
+  INTERCEPTOR: [0.38, 0.72, 0.00, 0.06],
+  CRUISER:     [0.58, 0.52, 0.00, 0.05],
+  HAMMERHEAD:  [0.72, 0.48, 0.00, 0.00],
+  JAVELIN:     [0.14, 0.95, 0.00, 0.00],
+  RAPTOR:      [0.52, 0.30, 1.30, 0.07],
+  SLAB:        [0.60, 0.38, 0.00, 0.00],
+  WEDGE:       [0.66, 0.44, 0.00, 0.03],
+  ARROWHEAD:   [0.54, 0.55, 0.00, 0.00],
+  TEARDROP:    [0.60, 0.68, 0.00, 0.07],
+  SCORPION:    [0.50, 0.60, 0.00, 0.05],
+  MANTIS:      [0.18, 0.72, 0.90, 0.00],
+  NONE:        [0.40, 0.65, 0.00, 0.06],
+};
+const ARCH_COL = {
+  FIGHTER:[105,130,175], BOMBER:[80,90,60],      WING:[75,120,215],   ROCKET:[200,80,60],
+  DRONE:[80,200,80],     DELTA:[45,50,60],        SAUCER:[200,200,100],STINGRAY:[80,160,190],
+  CARRIER:[140,120,100], INTERCEPTOR:[220,220,255],CRUISER:[100,140,160],HAMMERHEAD:[200,120,60],
+  JAVELIN:[60,210,210],  RAPTOR:[150,100,200],    SLAB:[120,130,120],  WEDGE:[180,60,60],
+  ARROWHEAD:[80,160,100],TEARDROP:[200,160,80],   SCORPION:[180,100,60],MANTIS:[60,180,120],
+  NONE:[80,100,140],
+};
+
+// ─── Profile building ─────────────────────────────────────────────────────────
+// Profiles are built directly from envW so the 3D silhouette matches the 2D
+// shadow. rxFloor = maxRx * 0.20 prevents needle-tip poles on all shapes.
+const T_SAM = [0, 0.04, 0.10, 0.20, 0.32, 0.46, 0.60, 0.73, 0.86, 0.95, 1.0];
+function buildProfile(arch) {
+  const [maxRx, ryRatio, maxFl, maxTb] = ARCH3D[arch] || ARCH3D.NONE;
+  const rxFloor = maxRx * 0.20;   // blunt ends: at least 20% of peak radius
+  return T_SAM.map(t => {
+    const w  = envW(arch, t);
+    const rx = Math.max(rxFloor, w * maxRx);
+    const ry = Math.max(rx * 0.30, rx * ryRatio);
+    return { t, rx, ry, fl: w * maxFl, tb: w * maxTb };
+  });
+}
+
+// ─── Profile sampling (Catmull-Rom) ──────────────────────────────────────────
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2=t*t, t3=t2*t;
+  return 0.5*(2*p1 + t*(-p0+p2) + t2*(2*p0-5*p1+4*p2-p3) + t3*(-p0+3*p1-3*p2+p3));
+}
+function sampleProf(prof, t, key) {
+  const n = prof.length;
+  if (t <= prof[0].t)   return prof[0][key]   || 0;
+  if (t >= prof[n-1].t) return prof[n-1][key] || 0;
+  let i = 1; while (i < n-1 && prof[i].t < t) i++;
+  const seg = (t - prof[i-1].t) / (prof[i].t - prof[i-1].t);
+  const v0 = prof[Math.max(0,i-2)][key]   || 0;
+  const v1 = prof[i-1][key]               || 0;
+  const v2 = prof[i][key]                 || 0;
+  const v3 = prof[Math.min(n-1,i+1)][key] || 0;
+  return Math.max(0, catmullRom(v0, v1, v2, v3, seg));
+}
+
+// ─── Cross-section point ─────────────────────────────────────────────────────
+function csPoint(rx, ry, fl, tb, a) {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  const flare = fl * Math.pow(Math.abs(ca), 2.5);
+  const bulge = tb * Math.max(0, sa) * (sa * sa);
+  return [(rx + flare) * ca, ry * sa + bulge];
+}
+
+// ─── Geometry update ─────────────────────────────────────────────────────────
+function updateGeometry(pA, pB, alpha) {
+  function get(key, t) {
+    return lerp(sampleProf(pA, t, key), sampleProf(pB, t, key), alpha);
+  }
+  for (let s = 0; s <= NS; s++) {
+    const t = s / NS, z = (t - 0.5) * BODY_LEN;
+    const rx = get('rx', t), ry = get('ry', t);
+    const fl = get('fl', t), tb = get('tb', t);
+    for (let r = 0; r < NR; r++) {
+      const a = (r / NR) * Math.PI * 2;
+      const [x, y] = csPoint(rx, ry, fl, tb, a);
+      const vi = s * NR + r;
+      vx[vi] = x; vy[vi] = y; vz[vi] = z;
+    }
+  }
+  vx[noseCap]=0; vy[noseCap]=0; vz[noseCap]=-BODY_LEN*0.5 - 0.12;
+  vx[tailCap]=0; vy[tailCap]=0; vz[tailCap]= BODY_LEN*0.5 + 0.12;
+}
+
+// ─── Camera ──────────────────────────────────────────────────────────────────
+let rotYaw=0.30, rotPitch=0.18, zoom=1.0, autoRot=true;
+const AUTO_SPEED = 0.35;
+const CAM_DIST = 9.0, FOV_SCALE = 9.0;
+
+function transformAndProject() {
+  const cy=Math.cos(rotYaw), sy=Math.sin(rotYaw);
+  const cp=Math.cos(rotPitch), sp=Math.sin(rotPitch);
+  const scale = Math.min(VW, VH) * 0.19 * zoom;
+  const cx0=VW*0.5, cy0=VH*0.5;
+  for (let i = 0; i < nVerts; i++) {
+    const x=vx[i], y=vy[i], z=vz[i];
+    const rx2 =  cy*x            - sy*z;
+    const ry2  =  sy*sp*x + cp*y + cy*sp*z;
+    const rz2  =  sy*cp*x - sp*y + cy*cp*z;
+    tvx[i]=rx2; tvy[i]=ry2; tvz[i]=rz2;
+    const d = FOV_SCALE / (rz2 + CAM_DIST);
+    spx[i]=cx0 + rx2*d*scale;
+    spy[i]=cy0 - ry2*d*scale;
+  }
+}
+
+// ─── Render 3D ───────────────────────────────────────────────────────────────
+const LIGHT = (() => { const v=[0.50,-0.70,0.50], m=Math.hypot(...v); return v.map(x=>x/m); })();
+const sortBuf = new Float64Array(nTris);
+const triOrd  = new Int32Array(nTris);
+
+function render3D(bR, bG, bB) {
+  const bgGrad = vCtx.createRadialGradient(VW*.5, VH*.42, 0, VW*.5, VH*.5, Math.max(VW,VH)*.75);
+  bgGrad.addColorStop(0,   '#0c1228');
+  bgGrad.addColorStop(0.55,'#060812');
+  bgGrad.addColorStop(1,   '#020308');
+  vCtx.fillStyle = bgGrad; vCtx.fillRect(0, 0, VW, VH);
+
+  const lx=LIGHT[0], ly=LIGHT[1], lz=LIGHT[2];
+  let vis = 0;
+  for (let i = 0; i < nTris; i++) {
+    const i0=TRIS[i*3], i1=TRIS[i*3+1], i2=TRIS[i*3+2];
+    const ax=tvx[i1]-tvx[i0], ay=tvy[i1]-tvy[i0], az=tvz[i1]-tvz[i0];
+    const bx=tvx[i2]-tvx[i0], by=tvy[i2]-tvy[i0], bz=tvz[i2]-tvz[i0];
+    const nz=ax*by - ay*bx;
+    const nl2=(ay*bz-az*by)**2 + (az*bx-ax*bz)**2 + nz*nz;
+    if (nl2 < 1e-18 || nz > 0) continue;
+    sortBuf[vis] = (tvz[i0]+tvz[i1]+tvz[i2])/3;
+    triOrd[vis++] = i;
+  }
+  const visArr = Array.from({length:vis},(_,k)=>k).sort((a,b)=>sortBuf[b]-sortBuf[a]);
+
+  const hvx=-lx, hvy=-ly, hvz=-lz-1;
+  const hvm=Math.sqrt(hvx*hvx+hvy*hvy+hvz*hvz);
+  for (let vi = 0; vi < vis; vi++) {
+    const i  = triOrd[visArr[vi]];
+    const i0=TRIS[i*3], i1=TRIS[i*3+1], i2=TRIS[i*3+2];
+    const ax=tvx[i1]-tvx[i0], ay=tvy[i1]-tvy[i0], az=tvz[i1]-tvz[i0];
+    const bx=tvx[i2]-tvx[i0], by=tvy[i2]-tvy[i0], bz=tvz[i2]-tvz[i0];
+    const nx=ay*bz-az*by, ny=az*bx-ax*bz, nz2=ax*by-ay*bx;
+    const nl=Math.sqrt(nx*nx+ny*ny+nz2*nz2);
+    const nnx=nx/nl, nny=ny/nl, nnz=nz2/nl;
+    const diff = Math.max(0, -(nnx*lx+nny*ly+nnz*lz));
+    const hemi = (nny+1)*0.5;
+    const rim  = Math.pow(Math.max(0, 1-Math.abs(nnz)), 4.5) * Math.max(0, 0.3+nny*0.7) * 0.60;
+    const spec = Math.pow(Math.max(0,(nnx*hvx+nny*hvy+nnz*hvz)/hvm), 38) * 0.60;
+    const amb  = 0.06 + hemi*0.14;
+    const tot  = amb + 0.72*diff;
+    const r = clamp(Math.round(bR*tot + rim*88  + spec*115), 0, 255);
+    const g = clamp(Math.round(bG*tot + rim*108 + spec*115), 0, 255);
+    const b = clamp(Math.round(bB*tot + rim*145 + spec*115), 0, 255);
+    vCtx.beginPath();
+    vCtx.moveTo(spx[i0],spy[i0]); vCtx.lineTo(spx[i1],spy[i1]); vCtx.lineTo(spx[i2],spy[i2]);
+    vCtx.closePath();
+    vCtx.fillStyle=`rgb(${r},${g},${b})`; vCtx.fill();
+    vCtx.strokeStyle='rgba(0,0,0,0.18)'; vCtx.lineWidth=0.5; vCtx.stroke();
+  }
+}
+
+// ─── 3D input ────────────────────────────────────────────────────────────────
+let drag=false, lastMX=0, lastMY=0;
+viewCanvas.addEventListener('mousedown', e => { drag=true; lastMX=e.clientX; lastMY=e.clientY; viewCanvas.classList.add('drag'); });
+window.addEventListener('mousemove', e => {
+  if (!drag) return;
+  rotYaw   += (e.clientX - lastMX) * 0.007;
+  rotPitch  = clamp(rotPitch + (e.clientY - lastMY) * 0.007, -1.4, 1.4);
+  lastMX=e.clientX; lastMY=e.clientY;
+});
+window.addEventListener('mouseup', () => { drag=false; viewCanvas.classList.remove('drag'); });
+viewCanvas.addEventListener('wheel', e => {
+  zoom = clamp(zoom * (e.deltaY > 0 ? 0.92 : 1.09), 0.18, 5);
+  e.preventDefault();
+}, { passive: false });
+let tDrag=false, tLastX=0, tLastY=0, tPinch=0;
+viewCanvas.addEventListener('touchstart', e => {
+  if (e.touches.length===1) { tDrag=true; tLastX=e.touches[0].clientX; tLastY=e.touches[0].clientY; }
+  else if (e.touches.length===2) { const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; tPinch=Math.hypot(dx,dy); }
+  e.preventDefault();
+}, {passive:false});
+viewCanvas.addEventListener('touchmove', e => {
+  if (e.touches.length===1 && tDrag) {
+    rotYaw   += (e.touches[0].clientX - tLastX) * 0.008;
+    rotPitch  = clamp(rotPitch + (e.touches[0].clientY - tLastY) * 0.008, -1.4, 1.4);
+    tLastX=e.touches[0].clientX; tLastY=e.touches[0].clientY;
+  } else if (e.touches.length===2) {
+    const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+    const d=Math.hypot(dx,dy); if (tPinch>0) zoom=clamp(zoom*d/tPinch, 0.18, 5); tPinch=d;
+  }
+  e.preventDefault();
+}, {passive:false});
+viewCanvas.addEventListener('touchend', () => { tDrag=false; });
+window.addEventListener('keydown', e => { if (e.key==='r'||e.key==='R') autoRot=!autoRot; });
+
+// ─── Morph state ─────────────────────────────────────────────────────────────
+const MORPH_S = 0.75;
+let profA = buildProfile('NONE'), profB = buildProfile('NONE'), morphAlpha = 1;
+let colA  = [...(ARCH_COL.NONE)], colB = [...(ARCH_COL.NONE)];
+let currentArch3D = 'NONE';
+
+function captureProfile() {
+  const ea = easeOut(morphAlpha);
+  return T_SAM.map(t => ({
+    t,
+    rx: lerp(sampleProf(profA,t,'rx'), sampleProf(profB,t,'rx'), ea),
+    ry: lerp(sampleProf(profA,t,'ry'), sampleProf(profB,t,'ry'), ea),
+    fl: lerp(sampleProf(profA,t,'fl'), sampleProf(profB,t,'fl'), ea),
+    tb: lerp(sampleProf(profA,t,'tb'), sampleProf(profB,t,'tb'), ea),
+  }));
+}
+function beginMorph(newArch) {
+  profA = captureProfile();
+  profB = buildProfile(newArch);
+  const ea = easeOut(morphAlpha);
+  colA = [lerp(colA[0],colB[0],ea), lerp(colA[1],colB[1],ea), lerp(colA[2],colB[2],ea)];
+  colB = [...(ARCH_COL[newArch] || ARCH_COL.NONE)];
+  morphAlpha   = 0;
+  currentArch3D = newArch;
+}
+
+// ─── Regen both ships ────────────────────────────────────────────────────────
+function regen() {
+  const p = generateHull(playerTroops, 'player');
+  const e = generateHull(enemyTroops,  'enemy');
+  playerHull = p.hull; playerArch = p.archetype;
+  enemyHull  = e.hull; enemyArch  = e.archetype;
+  if (p.archetype !== currentArch3D) beginMorph(p.archetype);
+  renderGrid();
+}
+
+// ─── Button actions ───────────────────────────────────────────────────────────
+function randomTroopsForSide(side) {
+  const rng = makeRng(Date.now() & 0x7fffffff);
+  const troops = new Set(), rs = side === 'player' ? 10 : 0;
+  function add(r, c) { if (r>=0&&r<G&&c>=0&&c<G) troops.add(`${r},${c}`); }
+  function addP(r, c) { add(r, c); add(r, 19-c); }
+  switch (Math.floor(rng() * 20)) {
+    case 0:  { const dr=Math.floor(rng()*2); addP(rs+1+dr,10+Math.floor(rng()*2)); addP(rs+2+dr,11+Math.floor(rng()*2)); if(rng()>0.5)addP(rs+3+dr,12+Math.floor(rng()*2)); break; }
+    case 1:  { addP(rs+2+Math.floor(rng()*3), 14+Math.floor(rng()*3)); break; }
+    case 2:  { addP(rs+1,10); addP(rs+2,11+Math.floor(rng()*2)); addP(rs+3,13+Math.floor(rng()*2)); break; }
+    case 3:  { const col=10+Math.floor(rng()*2),len=3+Math.floor(rng()*4); for(let i=0;i<len;i++)addP(rs+1+i,col); break; }
+    case 4:  { const d=Math.floor(rng()*2); addP(rs+1+d,15+Math.floor(rng()*3)); addP(rs+2+d,13+Math.floor(rng()*2)); break; }
+    case 5:  { const b=rs+1+Math.floor(rng()*2),col=12+Math.floor(rng()*2); addP(b,col); addP(b+1,col+Math.floor(rng()*2)); addP(b+2,col-Math.floor(rng()*2)); break; }
+    case 6:  { const row=rs+1+Math.floor(rng()*2); addP(row,17+Math.floor(rng()*2)); if(rng()>0.3)addP(row,15); break; }
+    case 7:  { addP(rs+1,10); addP(rs+2,13+Math.floor(rng()*2)); addP(rs+3,17+Math.floor(rng()*2)); break; }
+    case 8:  { const col=15+Math.floor(rng()*2),dep=3+Math.floor(rng()*2); for(let i=0;i<dep;i++)addP(rs+1+i,col); break; }
+    case 9:  { const col=11+Math.floor(rng()*1),len=5+Math.floor(rng()*2); for(let i=0;i<len;i++)addP(rs+1+i,col); break; }
+    case 10: { const col=13+Math.floor(rng()*2),len=4+Math.floor(rng()*2); for(let i=0;i<len;i++)addP(rs+1+i,col); break; }
+    case 11: { addP(rs+1,16+Math.floor(rng()*2)); addP(rs+2,13+Math.floor(rng()*2)); addP(rs+3,11); break; }
+    case 12: { for(let i=0;i<8;i++)addP(rs+1+i,11); break; }
+    case 13: { addP(rs+1,10); addP(rs+2,14+Math.floor(rng()*3)); break; }
+    case 14: { addP(rs+1+Math.floor(rng()*2), 12+Math.floor(rng()*2)); break; }
+    case 15: { addP(rs+1,15); addP(rs+2,12+Math.floor(rng()*2)); addP(rs+3,10); break; }
+    case 16: { addP(rs+1,10); addP(rs+2,13+Math.floor(rng()*2)); addP(rs+3,10); break; }
+    case 17: { for(let i=0;i<=5;i++)addP(rs+1+i,Math.max(10,13-i)); break; }
+    case 18: { addP(rs+1,13); addP(rs+2,13); addP(rs+2,11); addP(rs+3,12); addP(rs+4,10); break; }
+    case 19: { addP(rs+1,14); addP(rs+3,15); addP(rs+5,14); add(rs+2,9); add(rs+4,9); break; }
+  }
+  return troops;
+}
+function randomizePlayer() { playerTroops = randomTroopsForSide('player'); regen(); }
+function randomizeEnemy()  { enemyTroops  = randomTroopsForSide('enemy');  regen(); }
+function clearPlayer()     { playerTroops.clear(); regen(); }
+
+// ─── HUD ─────────────────────────────────────────────────────────────────────
+const hudEl = document.getElementById('hud');
+function updateHUD() {
+  hudEl.innerHTML =
+    `<span class="hl">${currentArch3D}</span><br>` +
+    `<span class="dim">drag</span> rotate &nbsp; <span class="dim">scroll</span> zoom<br>` +
+    `<span class="dim">R</span> auto-rotate (${autoRot?'on':'off'})<br>` +
+    `<span class="dim">click grid bottom half to build ship</span>`;
+}
+
+// ─── Animation loop ───────────────────────────────────────────────────────────
+let t0 = null;
+function frame(ts) {
+  if (!t0) t0 = ts;
+  const dt = Math.min((ts - t0) / 1000, 0.05);
+  t0 = ts;
+  if (autoRot) rotYaw += AUTO_SPEED * dt;
+  morphAlpha = Math.min(1, morphAlpha + dt / MORPH_S);
+  const ea = easeOut(morphAlpha);
+  updateGeometry(profA, profB, ea);
+  transformAndProject();
+  render3D(lerp(colA[0],colB[0],ea), lerp(colA[1],colB[1],ea), lerp(colA[2],colB[2],ea));
+  updateHUD();
+  requestAnimationFrame(frame);
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+(function init() {
+  // Player: triangle formation → DELTA archetype
+  [[11,10],[12,12],[13,14]].forEach(([r, c]) => {
+    playerTroops.add(`${r},${c}`);
+    playerTroops.add(`${r},${19-c}`);
+  });
+  // Enemy: wide drone spread
+  [[7,15]].forEach(([r, c]) => {
+    enemyTroops.add(`${r},${c}`);
+    enemyTroops.add(`${r},${19-c}`);
+  });
+  regen();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
