@@ -601,13 +601,6 @@ function generateHull(troops, side) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HULL NEIGHBOR HELPERS  (hex 6-direction)
 // ─────────────────────────────────────────────────────────────────────────────
-function inHull(row, col, hull) { return hull.has(`${row},${col}`); }
-
-// Returns array of 6 booleans (sectors 0-5) — true if neighbor is in hull.
-function getSectors(col, row, hull) {
-  return hexNeighborCoords(col, row).map(([nc, nr]) => hull.has(`${nr},${nc}`));
-}
-
 // Interior = all 6 hex neighbors present in hull.
 function isInterior(col, row, hull) {
   return hexNeighborCoords(col, row).every(([nc, nr]) => hull.has(`${nr},${nc}`));
@@ -616,92 +609,53 @@ function isInterior(col, row, hull) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HEX DRAWING PRIMITIVES
 // ─────────────────────────────────────────────────────────────────────────────
-// Draw a single sector triangle (center → v[i] → v[(i+1)%6]).
-function hexSector(cx, cy, v, i, color) {
+// Fill a complete hexagon with the given color.
+// Pass a custom radius r to draw an inset/scaled version.
+function fillHex(col, row, color, r) {
+  const { x, y } = hexCenter(col, row);
+  const v = hexVerts(x, y, r !== undefined ? r : S);
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(v[i][0], v[i][1]);
-  ctx.lineTo(v[(i + 1) % 6][0], v[(i + 1) % 6][1]);
+  ctx.moveTo(v[0][0], v[0][1]);
+  for (let i = 1; i < 6; i++) ctx.lineTo(v[i][0], v[i][1]);
   ctx.closePath();
   ctx.fill();
 }
 
-// Draw hull cell — only sectors whose neighbor is also in hull.
-function drawHullHex(col, row, sectors) {
-  const { x, y } = hexCenter(col, row);
-  const v = hexVerts(x, y);
-  ctx.fillStyle = C.hull;
-  for (let i = 0; i < 6; i++) {
-    if (!sectors[i]) continue;
-    hexSector(x, y, v, i, C.hull);
-  }
-  // Fill tiny center square so apex junctions have no gap.
-  ctx.fillStyle = C.hull;
-  ctx.fillRect(x - 2, y - 2, 4, 4);
+// Draw hull hex — solid filled hexagon.
+function drawHullHex(col, row) {
+  fillHex(col, row, C.hull);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MODULE COLOR ASSIGNMENT  (same logic as before)
+// MODULE COLOR ASSIGNMENT
 // noseProgress 0=nose row, 1=tail row   colDist 0=center axis, 1=edge
 // ─────────────────────────────────────────────────────────────────────────────
-function moduleColors(noseProgress, colDist) {
-  let nose;
-  if (noseProgress < 0.15) nose = C.cockpit;
-  else if (noseProgress < 0.45) nose = C.weapon;
-  else nose = C.reactor;
-
-  let tail;
-  if (noseProgress > 0.82) tail = C.engine;
-  else if (noseProgress > 0.62) tail = C.thruster;
-  else if (noseProgress > 0.4)  tail = C.reactor;
-  else tail = C.weapon;
-
-  let side;
-  if (colDist < 0.25)      side = C.reactor;
-  else if (colDist < 0.55) side = noseProgress < 0.5 ? C.weapon  : C.reactor;
-  else if (colDist < 0.8)  side = noseProgress < 0.5 ? C.intake  : C.thruster;
-  else                     side = C.wing;
-
-  return { nose, tail, side };
+function moduleColor(noseP, colDist) {
+  if (colDist > 0.6) {
+    // Outer edge — wing hardware / intakes
+    return noseP < 0.5 ? C.intake : C.wing;
+  }
+  if (noseP < 0.20) return C.cockpit;
+  if (noseP < 0.45) return C.weapon;
+  if (noseP < 0.62) return C.reactor;
+  if (noseP < 0.82) return C.thruster;
+  return C.engine;
 }
 
-// Draw colored module sectors for an interior hex.
-// Sectors 0=NE,1=E,2=SE,3=SW,4=W,5=NW.
-// For player (nose=top):  NE,NW=nose  SE,SW=tail  E,W=side
-// For enemy  (nose=bottom): SE,SW=nose  NE,NW=tail  E,W=side
+// Draw an interior module hex — whole inset hexagon filled with a single color.
+// The dark hull background shows as a thin border between tiles.
 function drawModuleHex(col, row, side, hullBounds) {
   const isPlayer = side === 'player';
-  const { x, y } = hexCenter(col, row);
-  const span   = Math.max(1, Math.abs(hullBounds.tailRow - hullBounds.noseRow));
-  const noseP  = Math.max(0, Math.min(1,
+  const span     = Math.max(1, Math.abs(hullBounds.tailRow - hullBounds.noseRow));
+  const noseP    = Math.max(0, Math.min(1,
     isPlayer ? (row - hullBounds.noseRow) / span
              : (hullBounds.noseRow - row) / span
   ));
   const colDist = Math.abs(col - 5) / 5;
-  const mc = moduleColors(noseP, colDist);
-
-  // Color per sector index [NE,E,SE,SW,W,NW]
-  const cols = isPlayer
-    ? [mc.nose, mc.side, mc.tail, mc.tail, mc.side, mc.nose]
-    : [mc.tail, mc.side, mc.nose, mc.nose, mc.side, mc.tail];
-
-  // Draw star dividers (full-radius lines from center to each vertex)
-  const vFull = hexVerts(x, y);
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 0.8;
-  for (let i = 0; i < 6; i++) {
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(vFull[i][0], vFull[i][1]);
-    ctx.stroke();
-  }
-
-  // Draw inset colored sectors (inner radius = 72% of S)
-  const vInner = hexVerts(x, y, S * 0.72);
-  for (let i = 0; i < 6; i++) {
-    hexSector(x, y, vInner, i, cols[i]);
-  }
+  const color   = moduleColor(noseP, colDist);
+  // Inset by ~2.5 px so the dark hull behind bleeds through as a hex-grid gap
+  fillHex(col, row, color, S - 2.5);
 }
 
 // Compute actual nose/tail row from a hull Set.
@@ -783,14 +737,14 @@ function render() {
     }
   }
 
-  // ── HULL PASS 1 — draw hull sectors (fill where neighbor is in hull) ────
+  // ── HULL PASS 1 — draw complete filled hexagons ────────────────────────
   for (const key of enemyHull) {
     const [r, c] = key.split(',').map(Number);
-    drawHullHex(c, r, getSectors(c, r, enemyHull));
+    drawHullHex(c, r);
   }
   for (const key of playerHull) {
     const [r, c] = key.split(',').map(Number);
-    drawHullHex(c, r, getSectors(c, r, playerHull));
+    drawHullHex(c, r);
   }
 
   // ── HULL PASS 2 — colored interior modules ──────────────────
