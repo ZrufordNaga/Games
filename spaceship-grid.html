@@ -97,7 +97,7 @@ button:hover { border-color: #3a6a8a; color: #aaccdd; }
 </div>
 <div id="info">
   Click bottom half to place/remove troops · hex silhouette updates live<br>
-  Colored modules fill interior hexes · 11 × 10 hex grid (5 rows per side)
+  Colored modules fill interior hexes · 11 × 11 hex grid (5 rows per side + center row)
 </div>
 
 <script>
@@ -105,13 +105,14 @@ button:hover { border-color: #3a6a8a; color: #aaccdd; }
 // HEX GRID CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 // Pointy-top hexagons, odd-r offset (odd rows shift right by HW/2).
-// GC=11 columns (0-10), GR=10 rows (0-9), HALF=5 rows per side.
+// GC=11 columns (0-10), GR=11 rows (0-10), HALF=5 = center/divider row.
 // Center column = 5  →  mirror of col c = 10 - c.
-// Player: rows 5-9  (depth = row - 5,  nose = row 5)
+// Player: rows 6-10 (depth = row - 6,  nose = row 6)
 // Enemy:  rows 0-4  (depth = 4 - row,  nose = row 4)
+// Row 5 = neutral center row — neither side uses it.
 // ─────────────────────────────────────────────────────────────────────────────
 const GC   = 11;
-const GR   = 10;
+const GR   = 11;
 const HALF = 5;
 const S    = 26;                          // hex circumradius (px)
 const HW   = S * Math.sqrt(3);           // horizontal center-to-center spacing
@@ -241,7 +242,7 @@ function generateHull(troops, side) {
   const unique = [];
   for (const k of troops) {
     const [r, c] = k.split(',').map(Number);
-    const depth  = isPlayer ? r - HALF : (HALF - 1) - r;
+    const depth  = isPlayer ? r - (HALF + 1) : (HALF - 1) - r;
     const absCol = Math.abs(c - 5);
     const key    = `${depth},${Math.round(absCol * 10)}`;
     if (!seenKeys.has(key)) { seenKeys.add(key); unique.push({ depth, absCol }); }
@@ -450,18 +451,18 @@ function generateHull(troops, side) {
   const hull = new Set();
 
   function addRow(i, w) {
-    const row = isPlayer ? HALF + hullBase + i : (HALF - 1) - hullBase - i;
-    if (isPlayer  && (row < HALF || row >= GR)) return;
+    const row = isPlayer ? HALF + 1 + hullBase + i : (HALF - 1) - hullBase - i;
+    if (isPlayer  && (row < HALF + 1 || row >= GR)) return;
     if (!isPlayer && (row > HALF - 1 || row < 0)) return;
     for (let c = 5 - w; c <= 5 + w; c++)
       if (c >= 0 && c < GC) hull.add(`${row},${c}`);
   }
   function rowIndex(i) {
-    return isPlayer ? HALF + hullBase + i : (HALF - 1) - hullBase - i;
+    return isPlayer ? HALF + 1 + hullBase + i : (HALF - 1) - hullBase - i;
   }
   function guardRow(row) {
     if (row < 0 || row >= GR) return false;
-    if (isPlayer  && row < HALF) return false;
+    if (isPlayer  && row < HALF + 1) return false;
     if (!isPlayer && row >= HALF) return false;
     return true;
   }
@@ -516,14 +517,14 @@ function generateHull(troops, side) {
 
   // ── INTERCEPTOR / JAVELIN: sharp needle nose extension ───────────────────
   if (archetype === 'INTERCEPTOR' || archetype === 'JAVELIN') {
-    const noseRow = isPlayer ? HALF + hullBase - 1 : (HALF - 1) - hullBase + 1;
+    const noseRow = isPlayer ? HALF + hullBase : (HALF - 1) - hullBase + 1;
     if (guardRow(noseRow)) hull.add(`${noseRow},5`);
   }
 
   // ── CARRIER: flight deck protrusion at nose ──────────────────────────────
   if (archetype === 'CARRIER') {
     for (let ext = 1; ext <= 1; ext++) {
-      const deckRow = isPlayer ? HALF + hullBase - ext : (HALF - 1) - hullBase + ext;
+      const deckRow = isPlayer ? HALF + 1 + hullBase - ext : (HALF - 1) - hullBase + ext;
       if (!guardRow(deckRow)) continue;
       const deckW = Math.max(1, Math.round(maxHalfW * (0.5 - ext * 0.15)));
       for (let c = 5 - deckW; c <= 5 + deckW; c++)
@@ -576,7 +577,7 @@ function generateHull(troops, side) {
 
   // ── SCORPION: stinger tail extension ─────────────────────────────────────
   if (archetype === 'SCORPION') {
-    const stingRow = isPlayer ? HALF + hullBase + shipDepth : (HALF - 1) - hullBase - shipDepth;
+    const stingRow = isPlayer ? HALF + 1 + hullBase + shipDepth : (HALF - 1) - hullBase - shipDepth;
     if (guardRow(stingRow)) hull.add(`${stingRow},5`);
   }
 
@@ -661,7 +662,7 @@ function drawModuleHex(col, row, side, hullBounds) {
 // Compute actual nose/tail row from a hull Set.
 function hullRowBounds(hull, isPlayer) {
   let noseRow = isPlayer ? GR - 1 : 0;
-  let tailRow = isPlayer ? HALF   : HALF - 1;
+  let tailRow = isPlayer ? HALF + 1 : HALF - 1;
   for (const k of hull) {
     const r = +k.split(',')[0];
     if (isPlayer) {
@@ -709,7 +710,7 @@ function drawTroopMarker(col, row, side) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RENDER
 // ─────────────────────────────────────────────────────────────────────────────
-const BATTLE_Y = OY + (HALF - 0.5) * VH;  // horizontal battle line y-coordinate
+const BATTLE_Y = OY + HALF * VH;  // horizontal battle line y-coordinate (center of row 5)
 
 function render() {
   // ── Background ──────────────────────────────────────────────
@@ -749,7 +750,7 @@ function render() {
 
   // ── HULL PASS 2 — colored interior modules ──────────────────
   const eBounds = enemyHull.size  ? hullRowBounds(enemyHull,  false) : { noseRow: HALF-1, tailRow: 0 };
-  const pBounds = playerHull.size ? hullRowBounds(playerHull, true)  : { noseRow: HALF,   tailRow: GR-1 };
+  const pBounds = playerHull.size ? hullRowBounds(playerHull, true)  : { noseRow: HALF+1, tailRow: GR-1 };
   for (const key of enemyHull) {
     const [r, c] = key.split(',').map(Number);
     if (isInterior(c, r, enemyHull) && !enemyTroops.has(key))
@@ -846,7 +847,7 @@ function handleClick(clientX, clientY) {
   const { col, row } = pixelToHex(px, py);
   if (col < 0 || col >= GC || row < 0 || row >= GR) return;
 
-  if (row >= HALF) {
+  if (row >= HALF + 1) {
     // Player half — toggle troop
     const key = `${row},${col}`;
     if (playerTroops.has(key)) playerTroops.delete(key);
@@ -859,17 +860,17 @@ canvas.addEventListener('mousedown', e => { e.preventDefault(); handleClick(e.cl
 canvas.addEventListener('touchstart', e => { e.preventDefault(); handleClick(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BUTTON ACTIONS — patterns scaled for 11-col × 10-row hex grid
-// rowStart: player=5, enemy=0   cols: 0-10, center=5, mirror=10-c
+// BUTTON ACTIONS — patterns scaled for 11-col × 11-row hex grid
+// rowStart: player=6, enemy=0   center row=5 (neutral)   cols: 0-10, center=5, mirror=10-c
 // ─────────────────────────────────────────────────────────────────────────────
 function randomTroopsForSide(side) {
   const rng      = makeRng(Date.now() & 0x7fffffff);
   const troops   = new Set();
-  const rowStart = side === 'player' ? HALF : 0;
+  const rowStart = side === 'player' ? HALF + 1 : 0;
 
   function add(r, c) {
     if (r < 0 || r >= GR) return;
-    if (side === 'player' && r < HALF) return;
+    if (side === 'player' && r < HALF + 1) return;
     if (side === 'enemy'  && r >= HALF) return;
     if (c < 0 || c >= GC) return;
     troops.add(`${r},${c}`);
